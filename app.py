@@ -3,65 +3,43 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 from datetime import datetime
+import base64
 
 # --- 1. CONFIGURAÇÃO DE ACESSO (GOOGLE SHEETS) ---
 @st.cache_resource
 def get_gspread_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # Transformamos st.secrets em um dicionário comum
+    # Carrega os dados do painel Secrets do Streamlit
     creds_info = dict(st.secrets["gcp_service_account"])
     
-    # --- TRATAMENTO AGRESSIVO DA CHAVE ---
-    raw_key = creds_info["private_key"]
-    
-    # 1. Substitui \n literal por quebra de linha real
-    raw_key = raw_key.replace("\\n", "\n")
-    
-    # 2. Divide em linhas e remove espaços em branco invisíveis no início/fim de cada uma
-    lines = [line.strip() for line in raw_key.split('\n') if line.strip()]
-    
-    # 3. Remonta a chave
-    clean_key = "\n".join(lines)
-    
-    # 4. Garante que as tags de BEGIN e END estejam corretas (sem espaços extras)
-    if "-----BEGIN PRIVATE KEY-----" not in clean_key:
-        clean_key = "-----BEGIN PRIVATE KEY-----\n" + clean_key
-    if "-----END PRIVATE KEY-----" not in clean_key:
-        clean_key = clean_key + "\n-----END PRIVATE KEY-----"
+    # --- DECODIFICAÇÃO DA CHAVE (SOLUÇÃO PARA ERRO DE BASE64) ---
+    try:
+        raw_key = creds_info["private_key"]
         
-    creds_info["private_key"] = clean_key
-    
-    # Tenta autorizar
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, scope)
-    return gspread.authorize(creds)
-    
-    # 3. CORREÇÃO DO ERRO DE BASE64 (Multiple of 4):
-    # O erro acontece por causa de espaços ou quebras de linha erradas dentro do bloco da chave.
-    # Vamos remontar a chave garantindo que cada linha de dados esteja limpa.
-    lines = key.split('\n')
-    cleaned_lines = []
-    for line in lines:
-        stripped_line = line.strip()
-        if stripped_line:
-            cleaned_lines.append(stripped_line)
-    
-    # Junta tudo novamente com quebras de linha limpas
-    creds_info["private_key"] = "\n".join(cleaned_lines)
-    
-    # Tenta autorizar
+        # Se a chave estiver codificada (começa com LS0t), nós a decodificamos
+        if raw_key.strip().startswith("LS0t"):
+            decoded_bytes = base64.b64decode(raw_key)
+            creds_info["private_key"] = decoded_bytes.decode("utf-8")
+        else:
+            # Caso contrário, apenas limpamos as quebras de linha padrão
+            creds_info["private_key"] = raw_key.replace("\\n", "\n")
+            
+    except Exception as e:
+        st.error(f"Erro ao processar chave de segurança: {e}")
+        st.stop()
+
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, scope)
     return gspread.authorize(creds)
 
 def load_data():
     client = get_gspread_client()
-    # ID da sua planilha (extraído do link que você forneceu anteriormente)
+    # ID da sua planilha
     spreadsheet_id = "1paP1ZB2ufwCc95T_gdCR92kx-suXbROnDfbWMC_ka0c"
     ss = client.open_by_key(spreadsheet_id)
     sheet = ss.worksheet("Calendario_Eventos")
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    # Limpa espaços em branco dos nomes das colunas
     df.columns = [col.strip() for col in df.columns]
     return sheet, df
 
@@ -71,25 +49,19 @@ mapa_niveis = {
     "Av.2": 4, "Av.2|": 5, "Av.3": 6, "Av.3|": 7, "Av.4": 8
 }
 
-# --- 3. OVERLAY DE CONFIRMAÇÃO ---
+# --- 3. DIÁLOGO DE INSCRIÇÃO ---
 @st.dialog("Confirmar Inscrição")
 def confirmar_inscricao_dialog(sheet, linha, evento, data_ev, vaga_nome, col_index):
     st.warning(f"Você está se inscrevendo como **{vaga_nome}**.")
-    st.markdown(f"""
-    **Detalhes da Atividade:**
-    - **Evento:** {evento}
-    - **Data:** {data_ev}
-    - **Voluntário:** {st.session_state.nome_usuario}
-    """)
+    st.markdown(f"**Evento:** {evento}  \n**Data:** {data_ev}")
     
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Sim, Confirmar", type="primary", use_container_width=True):
-            with st.spinner("Gravando na planilha..."):
-                # Atualiza a célula específica na planilha
+            with st.spinner("Gravando..."):
                 sheet.update_cell(linha, col_index, st.session_state.nome_usuario)
-                st.success("Inscrição realizada com sucesso!")
-                st.cache_resource.clear() # Limpa o cache para atualizar a tabela
+                st.success("Inscrição confirmada!")
+                st.cache_resource.clear()
                 st.rerun()
     with col2:
         if st.button("Cancelar", use_container_width=True):
@@ -98,7 +70,6 @@ def confirmar_inscricao_dialog(sheet, linha, evento, data_ev, vaga_nome, col_ind
 # --- 4. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Portal ProVida", page_icon="🤝", layout="wide")
 
-# Inicialização do estado de login
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
@@ -117,23 +88,22 @@ if not st.session_state.autenticado:
                 st.session_state.autenticado = True
                 st.rerun()
             else:
-                st.error("Por favor, insira seu nome para continuar.")
+                st.error("Por favor, preencha seu nome.")
     st.stop()
 
-# --- TELA PRINCIPAL DO PORTAL ---
+# --- CARREGAMENTO DE DADOS ---
 try:
     sheet, df = load_data()
 except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     st.stop()
 
+# --- LOGICA DE EXIBIÇÃO ---
 st.title(f"🤝 Bem-vindo(a), {st.session_state.nome_usuario}")
 
-# Processamento de dados
 df['Nivel_Num'] = df['Nível'].astype(str).str.strip().map(mapa_niveis).fillna(99)
 df['Data Formatada'] = pd.to_datetime(df['Data Específica']).dt.date
 
-# Lógica de Visibilidade (quem pode ver o quê)
 def checar_visibilidade(row, nivel_user):
     tipo_ev = str(row.get('Tipo', '')).strip()
     nivel_ev = row['Nivel_Num']
@@ -149,64 +119,44 @@ df_visivel = df[df['Visivel'] == True].copy()
 # --- FILTROS ---
 st.markdown("### 🔍 Filtrar Atividades")
 c1, c2, c3 = st.columns(3)
-
-# Ajuste automático de nomes de colunas caso variem na planilha
 col_nome_ev = 'Nome do Evento ou da Atividade' if 'Nome do Evento ou da Atividade' in df_visivel.columns else 'Nome do Evento'
 col_depto = 'Departamento Responsável' if 'Departamento Responsável' in df_visivel.columns else 'Departamento'
 
 with c1:
-    filtro_evento = st.selectbox("Evento Específico", ["Todos"] + sorted(df_visivel[col_nome_ev].unique().tolist()))
+    filtro_evento = st.selectbox("Evento", ["Todos"] + sorted(df_visivel[col_nome_ev].unique().tolist()))
 with c2:
     filtro_depto = st.selectbox("Departamento", ["Todos"] + sorted(df_visivel[col_depto].unique().tolist()))
 with c3:
-    data_filtro = st.date_input("A partir de:", datetime.now().date())
+    data_filtro = st.date_input("Data mínima:", datetime.now().date())
 
-# Aplicação dos filtros
 df_filtrado = df_visivel[df_visivel['Data Formatada'] >= data_filtro]
-if filtro_evento != "Todos": 
-    df_filtrado = df_filtrado[df_filtrado[col_nome_ev] == filtro_evento]
-if filtro_depto != "Todos": 
-    df_filtrado = df_filtrado[df_filtrado[col_depto] == filtro_depto]
+if filtro_evento != "Todos": df_filtrado = df_filtrado[df_filtrado[col_nome_ev] == filtro_evento]
+if filtro_depto != "Todos": df_filtrado = df_filtrado[df_filtrado[col_depto] == filtro_depto]
 
 # --- ÁREA DE INSCRIÇÃO ---
 st.markdown("---")
 if not df_filtrado.empty:
     df_filtrado['label'] = df_filtrado.apply(lambda x: f"[{x[col_depto]}] {x[col_nome_ev]} - {x['Data Formatada']}", axis=1)
-    
-    # Só mostra para inscrição eventos que tenham pelo menos uma vaga vazia
     df_com_vaga = df_filtrado[(df_filtrado['Voluntário 1'] == "") | (df_filtrado['Voluntário 2'] == "")].copy()
     
     if not df_com_vaga.empty:
-        escolha = st.selectbox("Selecione uma atividade para se inscrever:", df_com_vaga['label'].tolist())
-        if st.button("Me inscrever nesta atividade", type="primary"):
-            idx_selecionado = df_com_vaga[df_com_vaga['label'] == escolha].index[0]
-            linha_planilha = int(idx_selecionado) + 2 # +2 porque o pandas ignora o cabeçalho e começa em 0
-            
-            # Verifica qual vaga está disponível
-            v1 = str(df_com_vaga.loc[idx_selecionado, 'Voluntário 1']).strip()
+        escolha = st.selectbox("Escolha uma atividade:", df_com_vaga['label'].tolist())
+        if st.button("Me inscrever agora", type="primary"):
+            idx = df_com_vaga[df_com_vaga['label'] == escolha].index[0]
+            linha_planilha = int(idx) + 2
+            v1 = str(df_com_vaga.loc[idx, 'Voluntário 1']).strip()
             vaga_nome = "Voluntário 1" if v1 == "" else "Voluntário 2"
-            col_alvo = 7 if v1 == "" else 8 # Coluna G ou H
-            
-            confirmar_inscricao_dialog(sheet, linha_planilha, df_com_vaga.loc[idx_selecionado, col_nome_ev], df_com_vaga.loc[idx_selecionado, 'Data Formatada'], vaga_nome, col_alvo)
+            col_alvo = 7 if v1 == "" else 8
+            confirmar_inscricao_dialog(sheet, linha_planilha, df_com_vaga.loc[idx, col_nome_ev], df_com_vaga.loc[idx, 'Data Formatada'], vaga_nome, col_alvo)
     else:
-        st.info("Todas as atividades filtradas já estão com as vagas preenchidas.")
+        st.info("Vagas preenchidas para os filtros atuais.")
 else:
-    st.info("Nenhuma atividade disponível para o seu nível com os filtros selecionados.")
+    st.info("Nenhuma atividade encontrada.")
 
-# --- ESCALA ATUAL (TABELA) ---
-st.markdown("### 📋 Escala de Voluntários")
-colunas_exibicao = [col_nome_ev, 'Data Formatada', 'Nível', 'Voluntário 1', 'Voluntário 2']
-st.dataframe(df_filtrado[colunas_exibicao], use_container_width=True, hide_index=True)
+# --- TABELA ---
+st.markdown("### 📋 Escala Atual")
+st.dataframe(df_filtrado[[col_nome_ev, 'Data Formatada', 'Nível', 'Voluntário 1', 'Voluntário 2']], use_container_width=True, hide_index=True)
 
-# Rodapé
-st.sidebar.markdown(f"**Usuário:** {st.session_state.nome_usuario}")
-st.sidebar.markdown(f"**Nível:** {st.session_state.nivel_usuario_nome}")
-if st.sidebar.button("Sair / Trocar Usuário"):
+if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
-
-
-
-
-
-
