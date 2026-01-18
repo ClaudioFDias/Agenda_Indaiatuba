@@ -4,14 +4,14 @@ from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 from datetime import datetime
 
-
-# 1. Configuração de Acesso
+# 1. Configuração de Acesso (USANDO ST.SECRETS)
 @st.cache_resource
 def get_gspread_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    # Lê as credenciais diretamente do painel do Streamlit (Secrets)
+    creds_info = st.secrets["gcp_service_account"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, scope)
     return gspread.authorize(creds)
-
 
 def load_data():
     client = get_gspread_client()
@@ -23,13 +23,11 @@ def load_data():
     df.columns = [col.strip() for col in df.columns]
     return sheet, df
 
-
 # 2. Configurações de Níveis
 mapa_niveis = {
     "Nenhum": 0, "Básico": 1, "Av.1": 2, "Introdução": 3,
     "Av.2": 4, "Av.2|": 5, "Av.3": 6, "Av.3|": 7, "Av.4": 8
 }
-
 
 # --- FUNÇÃO DO OVERLAY DE CONFIRMAÇÃO ---
 @st.dialog("Confirmar Inscrição")
@@ -41,7 +39,7 @@ def confirmar_inscricao_dialog(sheet, linha, evento, data_ev, vaga_nome, col_ind
     - **Data:** {data_ev}
     - **Voluntário:** {st.session_state.nome_usuario}
     """)
-
+    
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Sim, Confirmar", type="primary", use_container_width=True):
@@ -53,7 +51,6 @@ def confirmar_inscricao_dialog(sheet, linha, evento, data_ev, vaga_nome, col_ind
     with col2:
         if st.button("Cancelar", use_container_width=True):
             st.rerun()
-
 
 st.set_page_config(page_title="Portal ProVida", page_icon="🤝", layout="wide")
 
@@ -85,7 +82,6 @@ st.title(f"🤝 Bem-vindo(a), {st.session_state.nome_usuario}")
 df['Nivel_Num'] = df['Nível'].astype(str).str.strip().map(mapa_niveis).fillna(99)
 df['Data Formatada'] = pd.to_datetime(df['Data Específica']).dt.date
 
-
 # Lógica de Visibilidade
 def checar_visibilidade(row, nivel_user):
     tipo_ev = str(row.get('Tipo', '')).strip()
@@ -95,7 +91,6 @@ def checar_visibilidade(row, nivel_user):
     if tipo_ev == "Nível da atividade e superiores": return nivel_user >= nivel_ev
     if tipo_ev == "Nível da atividade e inferiores": return nivel_user <= nivel_ev
     return nivel_user >= nivel_ev
-
 
 df['Visivel'] = df.apply(lambda row: checar_visibilidade(row, st.session_state.nivel_usuario_num), axis=1)
 df_visivel = df[df['Visivel'] == True].copy()
@@ -120,33 +115,20 @@ if filtro_depto != "Todos": df_filtrado = df_filtrado[df_filtrado[col_depto] == 
 # --- ÁREA DE INSCRIÇÃO ---
 st.markdown("---")
 if not df_filtrado.empty:
-    df_filtrado['label'] = df_filtrado.apply(lambda x: f"[{x[col_depto]}] {x[col_nome_ev]} - {x['Data Formatada']}",
-                                             axis=1)
+    df_filtrado['label'] = df_filtrado.apply(lambda x: f"[{x[col_depto]}] {x[col_nome_ev]} - {x['Data Formatada']}", axis=1)
     df_com_vaga = df_filtrado[(df_filtrado['Voluntário 1'] == "") | (df_filtrado['Voluntário 2'] == "")].copy()
-
+    
     if not df_com_vaga.empty:
         escolha = st.selectbox("Escolha a atividade:", df_com_vaga['label'].tolist())
         if st.button("Me inscrever nesta atividade", type="primary"):
-            # Localiza dados para passar para o Dialog
             idx_selecionado = df_com_vaga[df_com_vaga['label'] == escolha].index[0]
             linha_planilha = int(idx_selecionado) + 2
-
-            # Checa qual vaga está livre antes de abrir o pop-up
             row_values = sheet.row_values(linha_planilha)
             v1_vazio = True if len(row_values) < 7 or not str(row_values[6]).strip() else False
-
             vaga_nome = "Voluntário 1" if v1_vazio else "Voluntário 2"
             col_alvo = 7 if v1_vazio else 8
-
-            # ABRE O OVERLAY DE CONFIRMAÇÃO
-            confirmar_inscricao_dialog(
-                sheet,
-                linha_planilha,
-                df_com_vaga.loc[idx_selecionado, col_nome_ev],
-                df_com_vaga.loc[idx_selecionado, 'Data Formatada'],
-                vaga_nome,
-                col_alvo
-            )
+            
+            confirmar_inscricao_dialog(sheet, linha_planilha, df_com_vaga.loc[idx_selecionado, col_nome_ev], df_com_vaga.loc[idx_selecionado, 'Data Formatada'], vaga_nome, col_alvo)
     else:
         st.warning("Sem vagas disponíveis para estes filtros.")
 else:
@@ -154,8 +136,7 @@ else:
 
 # Escala Atual
 st.markdown("### 📋 Escala Atual")
-st.dataframe(df_filtrado[[col_nome_ev, 'Data Formatada', 'Nível', 'Tipo', 'Voluntário 1', 'Voluntário 2']],
-             use_container_width=True)
+st.dataframe(df_filtrado[[col_nome_ev, 'Data Formatada', 'Nível', 'Tipo', 'Voluntário 1', 'Voluntário 2']], use_container_width=True)
 
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state.autenticado = False
