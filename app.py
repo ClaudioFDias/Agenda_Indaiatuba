@@ -9,20 +9,16 @@ import base64
 @st.cache_resource
 def get_gspread_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
-    # Carrega os dados do painel Secrets do Streamlit
     creds_info = dict(st.secrets["gcp_service_account"])
     
-    # --- DECODIFICAÇÃO DA CHAVE (SOLUÇÃO PARA ERRO DE BASE64) ---
     try:
-        raw_key = creds_info["private_key"]
+        raw_key = creds_info["private_key"].strip()
         
-        # Se a chave estiver codificada (começa com LS0t), nós a decodificamos
-        if raw_key.strip().startswith("LS0t"):
-            decoded_bytes = base64.b64decode(raw_key)
-            creds_info["private_key"] = decoded_bytes.decode("utf-8")
+        if raw_key.startswith("LS0t"):
+            # O truque está aqui: adicionar o strip e o decode correto
+            decoded_bytes = base64.b64decode(raw_key, validate=False)
+            creds_info["private_key"] = decoded_bytes.decode("utf-8").strip()
         else:
-            # Caso contrário, apenas limpamos as quebras de linha padrão
             creds_info["private_key"] = raw_key.replace("\\n", "\n")
             
     except Exception as e:
@@ -160,3 +156,4 @@ st.dataframe(df_filtrado[[col_nome_ev, 'Data Formatada', 'Nível', 'Voluntário 
 if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
+
