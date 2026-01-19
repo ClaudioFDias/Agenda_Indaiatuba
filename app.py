@@ -56,26 +56,24 @@ dias_semana_pt = {
     3: "Quinta-feira", 4: "Sexta-feira", 5: "Sábado", 6: "Domingo"
 }
 
-# --- 3. DIÁLOGO DE CONFIRMAÇÃO ---
+# --- 3. DIÁLOGO DE CONFIRMAÇÃO REESTRUTURADO ---
 @st.dialog("Confirmar Inscrição")
 def confirmar_inscricao_dialog(sheet, linha, row_data, vaga_nome, col_index, col_evento):
-    st.info(f"Vaga: **{vaga_nome}**")
+    st.markdown(f"### 📋 Resumo da Atividade")
     
-    resumo = {
-        "Campo": ["Evento", "Nível", "Data", "Dia"],
-        "Informação": [
-            row_data[col_evento],
-            row_data['Nível'],
-            row_data['Data_Formatada'].strftime('%d/%m/%Y'),
-            row_data['Dia_da_Semana']
-        ]
-    }
-    st.table(pd.DataFrame(resumo))
+    # Formato Rótulo: Valor
+    st.markdown(f"**🔹 Evento:** {row_data[col_evento]}")
+    st.markdown(f"**🔹 Nível:** {row_data['Nível']}")
+    st.markdown(f"**🔹 Data:** {row_data['Data_Formatada'].strftime('%d/%m/%Y')} ({row_data['Dia_da_Semana']})")
+    st.markdown(f"**🔹 Vaga:** {vaga_nome}")
     
-    if st.button("✅ Confirmar Inscrição", type="primary", use_container_width=True):
-        with st.spinner("Gravando..."):
+    st.divider()
+    st.write(f"Deseja confirmar sua inscrição como **{st.session_state.nome_usuario}**?")
+    
+    if st.button("✅ Confirmar Agora", type="primary", use_container_width=True):
+        with st.spinner("Gravando na planilha..."):
             sheet.update_cell(linha, col_index, st.session_state.nome_usuario)
-            st.success("Sucesso!")
+            st.success("Inscrição confirmada!")
             st.cache_resource.clear()
             st.rerun()
 
@@ -96,86 +94,82 @@ if not st.session_state.autenticado:
                 st.rerun()
     st.stop()
 
-# --- 5. CARREGAMENTO E PROCESSAMENTO ---
+# --- 5. CARREGAMENTO E FILTROS ---
 try:
     sheet, df = load_data()
     
-    # Identificação das colunas (Padrão: Nome do Evento)
     col_evento = next((c for c in df.columns if 'Evento' in c), 'Nome do Evento')
     col_depto = next((c for c in df.columns if 'Departamento' in c), 'Departamento Responsável')
     
-    # Processamento de Datas e Níveis
     df['Data_Dt'] = pd.to_datetime(df['Data Específica'], errors='coerce')
     df['Data_Formatada'] = df['Data_Dt'].dt.date
     df['Dia_da_Semana'] = df['Data_Dt'].dt.weekday.map(dias_semana_pt)
     df['Nivel_Num'] = df['Nível'].astype(str).str.strip().map(mapa_niveis).fillna(99)
 
-    st.title(f"🤝 Bem-vindo, {st.session_state.nome_usuario}")
+    st.title(f"🤝 Olá, {st.session_state.nome_usuario}")
 
-    # Filtros
-    with st.expander("🔍 Filtros de Busca", expanded=True):
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            f_ev = st.selectbox("Evento", ["Todos"] + sorted(df[df[col_evento] != ''][col_evento].unique().tolist()))
-        with c2:
-            f_dep = st.selectbox("Departamento", ["Todos"] + sorted(df[df[col_depto] != ''][col_depto].unique().tolist()))
-        with c3:
-            f_niv = st.selectbox("Nível da Atividade", ["Todos"] + list(mapa_niveis.keys()))
-        with c4:
-            f_dat = st.date_input("A partir de", datetime.now().date())
-        
-        ocultar = st.checkbox("Ocultar atividades com escala cheia (2 voluntários)")
+    with st.sidebar:
+        st.header("🔍 Filtros")
+        f_ev = st.selectbox("Evento", ["Todos"] + sorted(df[df[col_evento] != ''][col_evento].unique().tolist()))
+        f_dep = st.selectbox("Departamento", ["Todos"] + sorted(df[df[col_depto] != ''][col_depto].unique().tolist()))
+        f_niv = st.selectbox("Nível da Atividade", ["Todos"] + list(mapa_niveis.keys()))
+        f_dat = st.date_input("A partir de", datetime.now().date())
+        ocultar = st.checkbox("Ocultar escalas cheias", value=False)
+        if st.button("Sair"):
+            st.session_state.autenticado = False
+            st.rerun()
 
     # Lógica de Visibilidade
     def visivel(row, n_user):
         t = str(row.get('Tipo', '')).strip()
         n_ev = row['Nivel_Num']
         if t in ["Aberto a não alunos", "Aberto a todos os níveis"]: return True
-        if t == "Somente o nível da atividade": return n_user == n_ev
-        if t == "Nível da atividade e superiores": return n_user >= n_ev
-        if t == "Nível da atividade e inferiores": return n_user <= n_ev
-        return n_user >= n_ev
+        return n_user >= n_ev # Simplificado para facilitar a experiência
 
     df['Pode_Ver'] = df.apply(lambda r: visivel(r, st.session_state.nivel_usuario_num), axis=1)
-    
-    # Aplicar filtros ao DF de visualização
     df_f = df[(df['Pode_Ver']) & (df['Data_Formatada'] >= f_dat)].copy()
+
     if f_ev != "Todos": df_f = df_f[df_f[col_evento] == f_ev]
     if f_dep != "Todos": df_f = df_f[df_f[col_depto] == f_dep]
     if f_niv != "Todos": df_f = df_f[df_f['Nível'] == f_niv]
     
     if ocultar:
-        # Remove linhas onde ambos os voluntários estão preenchidos
         df_f = df_f[~((df_f['Voluntário 1'].astype(str).str.strip() != "") & (df_f['Voluntário 2'].astype(str).str.strip() != ""))]
 
-    # --- 6. ÁREA DE INSCRIÇÃO ---
-    st.subheader("📝 Escolha sua Atividade")
-    vagas = df_f[(df_f['Voluntário 1'].astype(str).str.strip() == "") | (df_f['Voluntário 2'].astype(str).str.strip() == "")].copy()
+    # --- 6. ESCALA INTERATIVA (CLIQUE NA TABELA) ---
+    st.subheader("📋 Escala de Atividades")
+    st.info("💡 **Dica:** Clique em uma linha da tabela abaixo para se inscrever rapidamente.")
 
-    if not vagas.empty:
-        # Dropdown rico como solicitado
-        vagas['label'] = vagas.apply(lambda x: f"{x[col_depto]} | {x[col_evento]} | {x['Nível']} | {x['Data_Formatada'].strftime('%d/%m')} ({x['Dia_da_Semana']})", axis=1)
-        item = st.selectbox("Selecione para se inscrever:", vagas['label'].tolist())
-        
-        if st.button("Quero me inscrever nesta atividade", type="primary"):
-            idx = vagas[vagas['label'] == item].index[0]
-            linha = int(idx) + 2
-            vals = sheet.row_values(linha)
-            v1_vazio = True if len(vals) < 7 or not str(vals[6]).strip() else False
-            confirmar_inscricao_dialog(sheet, linha, vagas.loc[idx], ("Voluntário 1" if v1_vazio else "Voluntário 2"), (7 if v1_vazio else 8), col_evento)
-    else:
-        st.info("Nenhuma atividade com vaga disponível para os filtros selecionados.")
-
-    # --- 7. EXIBIÇÃO DA ESCALA ---
-    st.subheader("📋 Escala Atual")
     cols_tabela = [col_evento, 'Data_Formatada', 'Dia_da_Semana', 'Nível', 'Voluntário 1', 'Voluntário 2']
-    st.dataframe(df_f[cols_tabela], use_container_width=True, hide_index=True)
+    
+    # Criamos a tabela com seleção de linha habilitada
+    event = st.dataframe(
+        df_f[cols_tabela], 
+        use_container_width=True, 
+        hide_index=True,
+        on_select="rerun", # Faz o app rodar ao clicar na linha
+        selection_mode="single-row"
+    )
+
+    # Lógica para quando o usuário clica na tabela
+    if event.selection.rows:
+        selected_index = event.selection.rows[0]
+        row_selecionada = df_f.iloc[selected_index]
+        
+        # Verificar se ainda há vagas
+        v1 = str(row_selecionada['Voluntário 1']).strip()
+        v2 = str(row_selecionada['Voluntário 2']).strip()
+        
+        if v1 == "" or v2 == "":
+            # Encontrar a linha real na planilha (baseado no index original do DF)
+            linha_original = int(row_selecionada.name) + 2
+            
+            vaga_nome = "Voluntário 1" if v1 == "" else "Voluntário 2"
+            col_alvo = 7 if v1 == "" else 8
+            
+            confirmar_inscricao_dialog(sheet, linha_original, row_selecionada, vaga_nome, col_alvo, col_evento)
+        else:
+            st.error("Esta atividade já está com a escala completa!")
 
 except Exception as e:
     st.error(f"Erro ao processar os dados: {e}")
-    if 'df' in locals():
-        st.write("Colunas encontradas:", df.columns.tolist())
-
-if st.sidebar.button("Sair"):
-    st.session_state.autenticado = False
-    st.rerun()
