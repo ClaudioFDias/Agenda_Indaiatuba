@@ -3,77 +3,94 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import json
+import re
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Portal de Voluntários ProVida", page_icon="🤝", layout="wide")
+# --- CONFIGURAÇÃO ---
+st.set_page_config(page_title="Portal de Voluntários", layout="wide")
 
-# --- 1. FUNÇÃO DE CONEXÃO (TRATA O JWT SIGNATURE) ---
+# --- 1. CONEXÃO ULTRA-ROBUSTA ---
 @st.cache_resource
 def get_gspread_client():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
     try:
-        # Carrega o JSON do secrets
-        info = json.loads(st.secrets["GCP_JSON"])
+        # Puxa o conteúdo bruto do secret
+        raw_json = st.secrets["GCP_JSON"]
         
-        # Correção crucial para o erro 'Invalid JWT Signature':
-        # Converte as strings de escape \\n em quebras de linha reais \n
-        if "private_key" in info:
-            info["private_key"] = info["private_key"].replace("\\n", "\n")
-            
+        # Limpeza preventiva para evitar erros de caractere invisível
+        raw_json = raw_json.strip()
+        
+        # Converte em dicionário Python
+        info = json.loads(raw_json)
+        
+        # O TRATAMENTO DEFINITIVO DA CHAVE:
+        # Remove aspas extras, espaços e garante que o \n seja lido como quebra de linha
+        pk = info["private_key"]
+        pk = pk.replace("\\n", "\n").replace('"', '').strip()
+        info["private_key"] = pk
+        
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
         return gspread.authorize(creds)
+        
     except Exception as e:
-        st.error(f"Erro Crítico de Autenticação: {e}")
+        st.error(f"Erro na Chave de Segurança: {e}")
         st.stop()
 
-# --- 2. FUNÇÃO PARA CARREGAR DADOS ---
+# --- 2. CARREGAMENTO DOS DADOS ---
 def load_data():
+    client = get_gspread_client()
+    spreadsheet_id = "1paP1ZB2ufwCc95T_gdCR92kx-suXbROnDfbWMC_ka0c"
     try:
-        client = get_gspread_client()
-        # ID da sua planilha extraído das credenciais anteriores
-        spreadsheet_id = "1paP1ZB2ufwCc95T_gdCR92kx-suXbROnDfbWMC_ka0c"
         ss = client.open_by_key(spreadsheet_id)
         sheet = ss.worksheet("Calendario_Eventos")
-        
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        
-        # Limpeza de nomes de colunas
+        df = pd.DataFrame(sheet.get_all_records())
         df.columns = [col.strip() for col in df.columns]
-        return sheet, df
+        return df
     except Exception as e:
-        st.error(f"Erro ao acessar a Planilha Google: {e}")
-        return None, None
+        st.error(f"Erro ao ler a planilha: {e}")
+        return None
 
-# --- 3. MAPEAMENTO DE NÍVEIS ---
+# --- 3. LÓGICA DE LOGIN E MAPEAMENTO ---
 mapa_niveis = {
     "Nenhum": 0, "Básico": 1, "Av.1": 2, "Introdução": 3,
     "Av.2": 4, "Av.2|": 5, "Av.3": 6, "Av.3|": 7, "Av.4": 8
 }
 
-# --- 4. LÓGICA DE LOGIN ---
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("🔐 Acesso ao Portal de Voluntários")
-    
-    # Adicionando um formulário para evitar múltiplos carregamentos
-    with st.form("form_login"):
-        nome = st.text_input("Seu Nome Completo")
-        nivel = st.selectbox("Seu Nível Atual", list(mapa_niveis.keys()))
-        submit = st.form_submit_button("Entrar no Portal")
-        
-        if submit:
-            if nome:
-                st.session_state.nome_usuario = nome
-                st.session_state.nivel_usuario_num = mapa_niveis[nivel]
+    st.title("🔐 Login Portal ProVida")
+    with st.form("login"):
+        u_nome = st.text_input("Seu Nome")
+        u_nivel = st.selectbox("Seu Nível", list(mapa_niveis.keys()))
+        if st.form_submit_button("Entrar"):
+            if u_nome:
+                st.session_state.nome_usuario = u_nome
+                st.session_state.nivel_usuario_num = mapa_niveis[u_nivel]
                 st.session_state.autenticado = True
                 st.rerun()
-            else:
-                st.warning("Por favor, preencha o seu nome.")
     st.stop()
+
+# --- 4. EXIBIÇÃO ---
+if st.sidebar.button("Sair", key="logout"):
+    st.session_state.autenticado = False
+    st.rerun()
+
+st.header(f"Olá, {st.session_state.nome_usuario}!")
+
+df = load_data()
+if df is not None:
+    # Filtro de Nível
+    df['Nivel_Num'] = df['Nível'].astype(str).map(mapa_niveis).fillna(99)
+    df_visivel = df[df['Nivel_Num'] <= st.session_state.nivel_usuario_num].copy()
+    
+    # Formatação de Data
+    if 'Data Específica' in df_visivel.columns:
+        df_visivel['Data'] = pd.to_datetime(df_visivel['Data Específica'], errors='coerce').dt.date
+    
+    st.subheader("📅 Atividades")
+    exibir = ['Nome do Evento ou da Atividade', 'Data', 'Nível', 'Voluntário 1', 'Voluntário 2']
+    st.dataframe(df_visivel[[c for c in exibir if c in df_visivel.columns]], use_container_width=True, hide_index=True)
 
 # --- 5. INTERFACE DO USUÁRIO LOGADO ---
 # Botão de Logout na Sidebar com Key Única
@@ -111,3 +128,4 @@ if df is not None:
         st.error(f"Erro ao processar as colunas da planilha: {e}")
 else:
     st.info("Aguardando carregamento dos dados...")
+
