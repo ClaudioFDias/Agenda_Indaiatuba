@@ -10,28 +10,25 @@ st.set_page_config(page_title="Portal de Voluntários ProVida", layout="wide")
 
 @st.cache_resource
 def get_gspread_client():
-    """Conecta ao Google Sheets com reconstrução cirúrgica da chave RSA."""
     try:
-        # Reconstrução a partir das 6 partes do Secrets
+        # 1. Reconstrução
         partes_nome = ["P1", "P2", "P3", "P4", "P5", "P6"]
         chave_full = ""
-        
         for nome in partes_nome:
             if nome in st.secrets:
-                # Remove qualquer caractere que não seja Base64 (espaços, quebras, etc)
+                # Limpeza absoluta de caracteres não-base64
                 limpo = re.sub(r'[^A-Za-z0-9+/=]', '', st.secrets[nome])
                 chave_full += limpo
-            else:
-                st.error(f"Faltando a parte {nome} no Secrets do Streamlit.")
-                st.stop()
         
-        # AJUSTE DE PRECISÃO: O validador detectou 1621 caracteres. 
-        # Forçamos o corte nos 1620 caracteres (múltiplo de 4) para Base64 perfeito.
+        # 2. CORTE CIRÚRGICO (Ajustado para ignorar o caractere 'T' extra)
+        # Se a chave tem 1621, pegamos apenas os 1620 primeiros.
         chave_final = chave_full[:1620]
         
-        # Formatação para o padrão PEM exigido pela biblioteca do Google
+        # 3. Formatação PEM
         key_lines = textwrap.wrap(chave_final, 64)
         formatted_key = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(key_lines) + "\n-----END PRIVATE KEY-----\n"
+        
+        # ... (restante do dicionário creds_info igual ao anterior)
         
         # Estrutura do Dicionário de Credenciais
         creds_info = {
@@ -124,3 +121,4 @@ except Exception as e:
 if st.sidebar.button("Sair do Sistema"):
     st.session_state.autenticado = False
     st.rerun()
+
