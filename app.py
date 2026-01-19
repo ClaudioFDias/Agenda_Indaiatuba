@@ -10,17 +10,24 @@ import base64
 def get_gspread_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # Criamos uma cópia para não afetar o st.secrets original
+    # Criamos uma cópia limpa das credenciais
     creds_info = dict(st.secrets["gcp_service_account"])
     
-    raw_key = creds_info["private_key"]
+    # --- TRATAMENTO AGRESSIVO PARA EVITAR ERRO DE BASE64 ---
+    key = creds_info["private_key"]
     
-    # LIMPEZA: Se a chave vier com \n escrito (texto), transforma em quebra de linha real
-    if "\\n" in raw_key:
-        creds_info["private_key"] = raw_key.replace("\\n", "\n")
+    # 1. Remove qualquer aspa ou espaço que tenha vindo na colagem
+    key = key.strip().strip('"').strip("'")
     
-    # Remove aspas extras que podem ter vindo da colagem
-    creds_info["private_key"] = creds_info["private_key"].strip().strip('"').strip("'")
+    # 2. Converte o texto "\n" em quebras de linha reais
+    key = key.replace("\\n", "\n")
+    
+    # 3. Remove espaços em branco no final de cada linha interna da chave
+    # (Isso é o que causa o erro de 'multiple of 4')
+    lines = [line.strip() for line in key.split('\n') if line.strip()]
+    key = "\n".join(lines)
+    
+    creds_info["private_key"] = key
     
     try:
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_info, scope)
@@ -28,7 +35,6 @@ def get_gspread_client():
     except Exception as e:
         st.error(f"Erro na autorização do Google: {e}")
         st.stop()
-        
 
 def load_data():
     client = get_gspread_client()
@@ -158,5 +164,6 @@ st.dataframe(df_filtrado[[col_nome_ev, 'Data Formatada', 'Nível', 'Voluntário 
 if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
+
 
 
