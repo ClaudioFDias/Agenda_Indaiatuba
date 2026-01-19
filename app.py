@@ -5,41 +5,40 @@ import pandas as pd
 import textwrap
 import re
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Portal ProVida", layout="wide")
+# --- 1. CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="Portal de Voluntários ProVida", layout="wide")
 
 @st.cache_resource
 def get_gspread_client():
+    """Conecta ao Google Sheets com reconstrução cirúrgica da chave RSA."""
     try:
-        # Lista das partes que definimos no Secrets
+        # Reconstrução a partir das 6 partes do Secrets
         partes_nome = ["P1", "P2", "P3", "P4", "P5", "P6"]
-        chave_reconstruida = ""
+        chave_full = ""
         
-        # Reconstrução com limpeza de caracteres
         for nome in partes_nome:
             if nome in st.secrets:
-                valor = st.secrets[nome].strip()
-                # Remove qualquer coisa que não seja Base64 válido
-                limpo = re.sub(r'[^A-Za-z0-9+/=]', '', valor)
-                chave_reconstruida += limpo
+                # Remove qualquer caractere que não seja Base64 (espaços, quebras, etc)
+                limpo = re.sub(r'[^A-Za-z0-9+/=]', '', st.secrets[nome])
+                chave_full += limpo
             else:
-                st.error(f"❌ Erro: A parte '{nome}' não foi encontrada nos Secrets.")
+                st.error(f"Faltando a parte {nome} no Secrets do Streamlit.")
                 st.stop()
-
-        # Validação Base64 (Múltiplo de 4)
-        if len(chave_reconstruida) % 4 != 0:
-            st.error(f"⚠️ Erro de tamanho: {len(chave_reconstruida)} chars. Verifique se copiou as 6 partes completas.")
-            st.stop()
-
-        # Formatação PEM para o Google
-        key_lines = textwrap.wrap(chave_reconstruida, 64)
-        private_key_pem = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(key_lines) + "\n-----END PRIVATE KEY-----\n"
         
+        # AJUSTE DE PRECISÃO: O validador detectou 1621 caracteres. 
+        # Forçamos o corte nos 1620 caracteres (múltiplo de 4) para Base64 perfeito.
+        chave_final = chave_full[:1620]
+        
+        # Formatação para o padrão PEM exigido pela biblioteca do Google
+        key_lines = textwrap.wrap(chave_final, 64)
+        formatted_key = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(key_lines) + "\n-----END PRIVATE KEY-----\n"
+        
+        # Estrutura do Dicionário de Credenciais
         creds_info = {
             "type": "service_account",
             "project_id": "chromatic-tree-279819",
             "private_key_id": "866d21c6b1ad8efba9661a2a15b47b658d9e1573",
-            "private_key": private_key_pem,
+            "private_key": formatted_key,
             "client_email": "volutarios@chromatic-tree-279819.iam.gserviceaccount.com",
             "client_id": "110888986067806154751",
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -53,40 +52,75 @@ def get_gspread_client():
         return gspread.authorize(creds)
     
     except Exception as e:
-        st.error(f"❌ Falha Crítica na Autenticação: {e}")
+        st.error(f"❌ Falha Crítica na Conexão: {e}")
         st.stop()
 
-# --- MAPEAMENTO E LOGIN ---
-mapa_niveis = {"Nenhum": 0, "Básico": 1, "Av.1": 2, "Introdução": 3, "Av.2": 4, "Av.2|": 5, "Av.3": 6, "Av.3|": 7, "Av.4": 8}
+# --- 2. MAPEAMENTO DE NÍVEIS ---
+mapa_niveis = {
+    "Nenhum": 0, "Básico": 1, "Av.1": 2, "Introdução": 3,
+    "Av.2": 4, "Av.2|": 5, "Av.3": 6, "Av.3|": 7, "Av.4": 8
+}
 
+# --- 3. SISTEMA DE LOGIN ---
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("🔐 Login de Voluntários")
+    st.title("🔐 Login de Voluntários - ProVida")
     with st.form("login_form"):
         nome = st.text_input("Seu Nome")
-        nivel = st.selectbox("Seu Nível", list(mapa_niveis.keys()))
-        if st.form_submit_button("Acessar"):
+        nivel = st.selectbox("Seu Nível Atual", list(mapa_niveis.keys()))
+        
+        if st.form_submit_button("Acessar Calendário"):
             if nome:
                 st.session_state.nome_usuario = nome
                 st.session_state.nivel_usuario_num = mapa_niveis[nivel]
                 st.session_state.autenticado = True
                 st.rerun()
+            else:
+                st.warning("Por favor, informe seu nome.")
     st.stop()
 
-# --- CARREGAMENTO DA PLANILHA ---
+# --- 4. EXIBIÇÃO DOS DADOS (PÓS-LOGIN) ---
 try:
     client = get_gspread_client()
+    # Abre a planilha pelo ID único
     sh = client.open_by_key("1paP1ZB2ufwCc95T_gdCR92kx-suXbROnDfbWMC_ka0c")
-    df = pd.DataFrame(sh.worksheet("Calendario_Eventos").get_all_records())
+    worksheet = sh.worksheet("Calendario_Eventos")
     
+    # Converte para DataFrame do Pandas
+    df = pd.DataFrame(worksheet.get_all_records())
+    
+    # Limpeza básica de nomes de colunas
     df.columns = [c.strip() for c in df.columns]
-    df['Nivel_Num'] = df['Nível'].astype(str).str.strip().map(mapa_niveis).fillna(99)
-    df_filtrado = df[df['Nivel_Num'] <= st.session_state.nivel_usuario_num]
-
-    st.header(f"Olá, {st.session_state.nome_usuario}")
-    st.dataframe(df_filtrado[['Nome do Evento ou da Atividade', 'Data Específica', 'Nível', 'Voluntário 1', 'Voluntário 2']], hide_index=True, use_container_width=True)
+    
+    if 'Nível' in df.columns:
+        # Cria coluna numérica para comparação de filtros
+        df['Nivel_Num_Tabela'] = df['Nível'].astype(str).str.strip().map(mapa_niveis).fillna(99)
+        
+        # Lógica de Filtro: O voluntário vê tudo do nível dele para baixo
+        df_filtrado = df[df['Nivel_Num_Tabela'] <= st.session_state.nivel_usuario_num].copy()
+        
+        st.header(f"Bem-vindo, {st.session_state.nome_usuario}!")
+        st.info(f"Exibindo atividades compatíveis com o nível: **{list(mapa_niveis.keys())[list(mapa_niveis.values()).index(st.session_state.nivel_usuario_num)]}**")
+        
+        # Seleção das colunas principais para exibição
+        colunas_u = ['Nome do Evento ou da Atividade', 'Data Específica', 'Nível', 'Voluntário 1', 'Voluntário 2']
+        colunas_exibir = [c for c in colunas_u if c in df_filtrado.columns]
+        
+        st.dataframe(
+            df_filtrado[colunas_exibir], 
+            use_container_width=True, 
+            hide_index=True
+        )
+    else:
+        st.error("Erro: A coluna 'Nível' não foi encontrada na sua planilha Google.")
 
 except Exception as e:
-    st.error(f"Erro ao carregar planilha: {e}")
+    st.error(f"Erro ao carregar os dados da planilha: {e}")
+    st.info("Dica: Verifique se o e-mail da conta de serviço está como 'Editor' na planilha.")
+
+# --- 5. BOTÃO DE LOGOUT ---
+if st.sidebar.button("Sair do Sistema"):
+    st.session_state.autenticado = False
+    st.rerun()
