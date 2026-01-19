@@ -7,16 +7,15 @@ import pandas as pd
 @st.cache_resource
 def get_gspread_client():
     try:
-        # Puxa a chave bruta das aspas triplas do TOML
+        # Puxa do st.secrets definido no dashboard do Streamlit
         pk = st.secrets["PRIVATE_KEY"]
         email = "volutarios@chromatic-tree-279819.iam.gserviceaccount.com"
         
-        # Reconstrói o dicionário para o Google
         creds_dict = {
             "type": "service_account",
             "project_id": "chromatic-tree-279819",
             "private_key_id": "866d21c6b1ad8efba9661a2a15b47b658d9e1573",
-            "private_key": pk,
+            "private_key": pk, # Aqui ele usa a variável que veio do secret
             "client_email": email,
             "client_id": "110888986067806154751",
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -133,5 +132,6 @@ if df is not None:
         st.error(f"Erro ao processar as colunas da planilha: {e}")
 else:
     st.info("Aguardando carregamento dos dados...")
+
 
 
