@@ -52,17 +52,20 @@ dias_semana_pt = {
     3: "Quinta-feira", 4: "Sexta-feira", 5: "Sábado", 6: "Domingo"
 }
 
-# Funções de Status e Cor
+# NOVA LÓGICA DE STATUS: Focada em vagas restantes
 def definir_status(row):
     v1 = str(row.get('Voluntário 1', '')).strip()
     v2 = str(row.get('Voluntário 2', '')).strip()
-    if v1 == "" and v2 == "": return "🔴 Vazio (0/2)"
-    if v1 == "" or v2 == "": return "🟡 1 Vaga (1/2)"
-    return "🟢 Completo (2/2)"
+    
+    if v1 == "" and v2 == "": 
+        return "🔴 2 Vagas Disponíveis"
+    if v1 == "" or v2 == "": 
+        return "🟡 1 Vaga Disponível"
+    return "🟢 Escala Completa"
 
 def aplicar_estilo_linha(row):
     status = definir_status(row)
-    if "Vazio" in status: return ['background-color: #FFEBEE; color: black'] * len(row)
+    if "2 Vagas" in status: return ['background-color: #FFEBEE; color: black'] * len(row)
     if "1 Vaga" in status: return ['background-color: #FFF9C4; color: black'] * len(row)
     return ['background-color: #FFFFFF; color: black'] * len(row)
 
@@ -72,27 +75,28 @@ def confirmar_inscricao_dialog(sheet, linha, row_data, vaga_nome, col_index, col
     st.markdown("### 📋 Resumo da Atividade")
     st.markdown(f"**🔹 Evento:** {row_data[col_evento]}")
     st.markdown(f"**🔹 Data:** {row_data['Data_Formatada'].strftime('%d/%m/%Y')} ({row_data['Dia_da_Semana']})")
-    st.markdown(f"**🔹 Nível:** {row_data['Nível']}")
-    st.markdown(f"**🔹 Vaga disponível:** {vaga_nome}")
+    st.markdown(f"**🔹 Nível Requerido:** {row_data['Nível']}")
+    st.markdown(f"**🔹 Sua Vaga:** {vaga_nome}")
     
     st.divider()
-    st.write(f"Deseja confirmar a inscrição para **{st.session_state.nome_usuario}**?")
+    st.write(f"Confirmar participação de **{st.session_state.nome_usuario}**?")
     
     if st.button("✅ Sim, confirmar", type="primary", use_container_width=True):
-        with st.spinner("Atualizando planilha..."):
+        with st.spinner("Atualizando escala..."):
             sheet.update_cell(linha, col_index, st.session_state.nome_usuario)
-            st.success("Inscrição realizada com sucesso!")
+            st.success("Inscrição confirmada!")
             st.cache_resource.clear()
             st.rerun()
 
 # --- 4. INTERFACE E LOGIN ---
 st.set_page_config(page_title="Portal de Voluntários ProVida", layout="wide")
 
-# CSS para forçar modo claro caso o config.toml falhe
+# Forçar cores (Fundo Branco / Texto Preto)
 st.markdown("""
     <style>
     .stApp { background-color: #FFFFFF; color: #000000; }
     h1, h2, h3, p, label, .stMarkdown { color: #000000 !important; }
+    .stDataFrame { background-color: white; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -122,7 +126,7 @@ try:
     df['Nivel_Num'] = df['Nível'].astype(str).str.strip().map(mapa_niveis).fillna(99)
     df['Status'] = df.apply(definir_status, axis=1)
 
-    st.title(f"🤝 Bem-vindo(a), {st.session_state.nome_usuario}")
+    st.title(f"🤝 Olá, {st.session_state.nome_usuario}")
 
     # Sidebar Filtros
     with st.sidebar:
@@ -130,60 +134,69 @@ try:
         f_ev = st.selectbox("Evento", ["Todos"] + sorted(df[df[col_evento]!=''][col_evento].unique().tolist()))
         f_dep = st.selectbox("Departamento", ["Todos"] + sorted(df[df[col_depto]!=''][col_depto].unique().tolist()))
         f_dat = st.date_input("A partir de", datetime.now().date())
-        ocultar_cheios = st.checkbox("Mostrar apenas vagas abertas", value=False)
+        apenas_vagas = st.checkbox("Mostrar apenas atividades com vagas", value=False)
         if st.button("Sair"):
             st.session_state.autenticado = False
             st.rerun()
 
-    # Filtros de Visibilidade e Seleção
+    # Filtros de Visibilidade (Baseado no nível do usuário)
     df_f = df[(df['Nivel_Num'] <= st.session_state.nivel_usuario_num) & (df['Data_Formatada'] >= f_dat)].copy()
     
     if f_ev != "Todos": df_f = df_f[df_f[col_evento] == f_ev]
     if f_dep != "Todos": df_f = df_f[df_f[col_depto] == f_dep]
-    if ocultar_cheios:
-        df_f = df_f[df_f['Status'] != "🟢 Completo (2/2)"]
+    if apenas_vagas:
+        df_f = df_f[df_f['Status'] != "🟢 Escala Completa"]
 
-    # --- 6. OPÇÃO 1: DROP DOWN ---
-    st.subheader("📝 Inscrição Rápida")
-    vagas = df_f[df_f['Status'] != "🟢 Completo (2/2)"].copy()
-    if not vagas.empty:
-        vagas['label'] = vagas.apply(lambda x: f"{x[col_evento]} | {x['Data_Formatada'].strftime('%d/%m')} | {x['Status']}", axis=1)
-        escolha = st.selectbox("Selecione uma atividade:", vagas['label'].tolist(), index=None, placeholder="Escolha aqui...")
+    # --- 6. INSCRIÇÃO VIA LISTA (SELECTBOX) ---
+    st.subheader("📝 Inscrição por Lista")
+    vagas_list = df_f[df_f['Status'] != "🟢 Escala Completa"].copy()
+    
+    if not vagas_list.empty:
+        vagas_list['label'] = vagas_list.apply(lambda x: f"{x[col_evento]} | {x['Data_Formatada'].strftime('%d/%m')} | {x['Status']}", axis=1)
+        escolha = st.selectbox("Selecione a atividade desejada:", vagas_list['label'].tolist(), index=None, placeholder="Clique para escolher...")
+        
         if escolha:
-            idx = vagas[vagas['label'] == escolha].index[0]
-            if st.button("Confirmar via Lista"):
-                linha_p = int(idx) + 2
-                v1 = str(sheet.cell(linha_p, 7).value).strip()
-                vaga_n = "Voluntário 1" if v1 == "" else "Voluntário 2"
-                confirmar_inscricao_dialog(sheet, linha_p, vagas.loc[idx], vaga_n, (7 if v1 == "" else 8), col_evento)
+            idx = vagas_list[vagas_list['label'] == escolha].index[0]
+            if st.button("Confirmar Inscrição"):
+                linha_planilha = int(idx) + 2
+                # Checagem dupla da vaga
+                val_v1 = str(sheet.cell(linha_planilha, 7).value).strip()
+                nome_vaga = "Voluntário 1" if val_v1 == "" else "Voluntário 2"
+                col_alvo = 7 if val_v1 == "" else 8
+                confirmar_inscricao_dialog(sheet, linha_planilha, vagas_list.loc[idx], nome_vaga, col_alvo, col_evento)
     else:
-        st.info("Nenhuma vaga aberta encontrada para os filtros selecionados.")
+        st.info("Nenhuma atividade com vaga aberta para o seu nível no momento.")
 
-    # --- 7. OPÇÃO 2: TABELA COLORIDA ---
+    # --- 7. ESCALA VISUAL (TABELA COLORIDA) ---
     st.divider()
-    st.subheader("📋 Escala Completa")
-    st.caption("Linhas em **Amarelo** ou **Vermelho** têm vagas. Clique na linha para se inscrever.")
+    st.subheader("📋 Escala de Atividades")
+    st.caption("Clique em qualquer linha colorida para se inscrever.")
     
-    cols_tab = ['Status', col_evento, 'Data_Formatada', 'Dia_da_Semana', 'Voluntário 1', 'Voluntário 2']
+    cols_exibir = ['Status', col_evento, 'Data_Formatada', 'Dia_da_Semana', 'Voluntário 1', 'Voluntário 2']
     
-    selecao = st.dataframe(
-        df_f[cols_tab].style.apply(aplicar_estilo_linha, axis=1),
+    # Exibição com Seleção de Linha
+    tabela_interativa = st.dataframe(
+        df_f[cols_exibir].style.apply(aplicar_estilo_linha, axis=1),
         use_container_width=True,
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row"
     )
 
-    if selecao.selection.rows:
-        row_idx = selecao.selection.rows[0]
-        row_sel = df_f.iloc[row_idx]
-        if row_sel['Status'] != "🟢 Completo (2/2)":
-            linha_original = int(row_sel.name) + 2
-            v1_at = str(row_sel['Voluntário 1']).strip()
-            vaga_n = "Voluntário 1" if v1_at == "" else "Voluntário 2"
-            confirmar_inscricao_dialog(sheet, linha_original, row_sel, vaga_n, (7 if v1_at == "" else 8), col_evento)
+    # Ação ao clicar na linha
+    if tabela_interativa.selection.rows:
+        row_pos = tabela_interativa.selection.rows[0]
+        row_sel = df_f.iloc[row_pos]
+        
+        if "Escala Completa" not in row_sel['Status']:
+            linha_idx = int(row_sel.name) + 2
+            # Determina qual vaga preencher
+            v1_atual = str(row_sel['Voluntário 1']).strip()
+            nome_vaga = "Voluntário 1" if v1_atual == "" else "Voluntário 2"
+            num_col = 7 if v1_atual == "" else 8
+            confirmar_inscricao_dialog(sheet, linha_idx, row_sel, nome_vaga, num_col, col_evento)
         else:
-            st.warning("Esta atividade já está completa!")
+            st.warning("Esta atividade já está com a escala preenchida.")
 
 except Exception as e:
-    st.error(f"Erro ao carregar dados: {e}")
+    st.error(f"Erro no sistema: {e}")
