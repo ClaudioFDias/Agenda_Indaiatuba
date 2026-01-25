@@ -100,8 +100,8 @@ try:
     df['Niv_N'] = df['Nível'].astype(str).str.strip().map(mapa_niveis).fillna(99)
     df['Status'] = df.apply(definir_status, axis=1)
 
-    # Ordenação Cronológica
-    df = df.sort_values(by='Data_Dt').reset_index(drop=False)
+    # Ordenação Cronológica (Data e depois Horário)
+    df = df.sort_values(by=['Data_Dt', col_hr]).reset_index(drop=False)
 
     st.title(f"🤝 Olá, {st.session_state.nome_usuario.split()[0]}")
 
@@ -119,33 +119,36 @@ try:
     st.subheader("📝 Inscrição Rápida")
     v_l = df_f[df_f['Status'] != "🟢 Completo"].copy()
     if not v_l.empty:
-        v_l['label'] = v_l.apply(lambda x: f"{x['Data_Dt'].strftime('%d/%m')} | {x[col_hr]} | {x[col_ev][:10]}.. | {x['Status']}", axis=1)
+        v_l['label'] = v_l.apply(lambda x: f"{x['Data_Dt'].strftime('%d/%m')} - {x['Dia_da_Semana']} - {x[col_hr]} | {x[col_ev][:10]}..", axis=1)
         esc = st.selectbox("Escolha:", v_l['label'].tolist(), index=None, placeholder="Selecione...")
         if esc:
             idx_vagas = v_l[v_l['label'] == esc].index[0]
             if st.button("Inscrever-se", type="primary"):
                 linha_p = int(v_l.loc[idx_vagas, 'index']) + 2
                 val_v1 = str(sheet.cell(linha_p, 7).value).strip()
-                confirmar_dialog(sheet, linha_p, v_l.loc[idx_vagas], ("V1" if val_v1 == "" else "V2"), (7 if val_v1 == "" else 8), col_ev)
+                confirmar_dialog(sheet, linha_p, v_l.loc[idx_vagas], ("V1" if val_v1 == "" else "V2"), (7 if v1_val == "" else 8), col_ev)
     
-    # --- 7. ESCALA (TABELA COM NÍVEL E HORÁRIO) ---
+    # --- 7. ESCALA (TABELA COM COLUNA COMBINADA) ---
     st.divider()
     st.subheader("📋 Escala")
     
     df_show = df_f.copy()
-    df_show['Data'] = df_show['Data_Dt'].dt.strftime('%d/%m')
-    # Renomeando para ficar curto no mobile
+    
+    # CRIANDO A COLUNA COMBINADA: DD/MM - Dia - Hora
+    df_show['Data/Hora'] = df_show.apply(
+        lambda x: f"{x['Data_Dt'].strftime('%d/%m')} - {x['Dia_da_Semana']} - {x[col_hr]}", axis=1
+    )
+    
+    # Renomeando colunas restantes
     df_show = df_show.rename(columns={
         col_ev: 'Evento', 
-        col_hr: 'Hora',
         'Nível': 'Nív.',
-        'Dia_da_Semana': 'Dia', 
         'Voluntário 1': 'V1', 
         'Voluntário 2': 'V2'
     })
     
-    # Nova ordem de colunas incluindo Nível e Hora
-    cols_display = ['Status', 'Data', 'Dia', 'Hora', 'Nív.', 'Evento', 'V1', 'V2']
+    # Seleção de colunas otimizada para Mobile
+    cols_display = ['Status', 'Data/Hora', 'Nív.', 'Evento', 'V1', 'V2']
 
     sel = st.dataframe(
         df_show[cols_display].style.apply(aplicar_estilo_linha, axis=1), 
