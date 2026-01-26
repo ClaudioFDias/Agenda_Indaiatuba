@@ -64,13 +64,12 @@ def confirmar_dialog(sheet, linha, row, vaga_n, col_idx, col_ev, col_hr):
     st.write(f"👤 **Vaga:** {vaga_n}")
     
     if st.button("Confirmar", type="primary", width="stretch"):
-        with st.spinner("Registrando na Planilha..."):
-            # AQUI ESTÁ A CORREÇÃO: sheet.update_cell usa índice 1-based (8 para Voluntário 1, 9 para Voluntário 2)
+        with st.spinner("Registrando..."):
             sheet.update_cell(linha, col_idx, st.session_state.nome_usuario)
             st.cache_resource.clear()
             st.rerun()
 
-# --- 4. LOGIN E CSS ---
+# --- 4. LOGIN E ESTILO ---
 st.set_page_config(page_title="ProVida Escala", layout="centered")
 
 st.markdown("""
@@ -97,11 +96,12 @@ if not st.session_state.autenticado:
                 st.rerun()
     st.stop()
 
-# --- 5. PROCESSAMENTO DE DADOS ---
+# --- 5. PROCESSAMENTO ---
 try:
     sheet, df = load_data()
     col_ev = next((c for c in df.columns if 'Evento' in c), 'Nome do Evento')
     col_hr = next((c for c in df.columns if c.lower() in ['horário', 'horario', 'hora']), 'Horario')
+    col_dep = 'Departamento'
     
     df['Data_Dt'] = pd.to_datetime(df['Data Específica'], errors='coerce', dayfirst=True)
     df['Dia_Extenso'] = df['Data_Dt'].dt.weekday.map(dias_semana_extenso)
@@ -114,15 +114,24 @@ try:
     st.write("🔍 **Filtros Rápidos:**")
     filtro_status = st.pills("Ver apenas:", ["Tudo", "Minhas Inscrições", "Sem Voluntários", "Vagas Abertas"], default="Tudo")
     
-    with st.expander("📅 Filtrar por Data ou Nível"):
+    with st.expander("📅 Filtros Avançados (Data, Nível, Departamento)"):
         col1, col2 = st.columns(2)
         f_dat = col1.date_input("A partir de:", datetime.now().date())
-        niveis_disp = sorted(df['Nível'].unique().tolist())
+        
+        # Filtro de Nível
+        niveis_disp = sorted(df['Nível'].unique().astype(str).tolist())
         f_nivel = col2.multiselect("Nível específico:", niveis_disp)
+        
+        # Filtro de Departamento (Novo)
+        deps_disp = sorted(df[col_dep].unique().astype(str).tolist())
+        f_dep = st.multiselect("Filtrar por Departamento:", deps_disp)
 
+    # Lógica de Filtragem
     df_f = df[(df['Niv_N'] <= st.session_state.nivel_num) & (df['Data_Dt'].dt.date >= f_dat)].copy()
 
     if f_nivel: df_f = df_f[df_f['Nível'].isin(f_nivel)]
+    if f_dep: df_f = df_f[df_f[col_dep].isin(f_dep)]
+    
     if filtro_status == "Minhas Inscrições":
         nome_l = st.session_state.nome_usuario.strip().lower()
         df_f = df_f[(df_f['Voluntário 1'].astype(str).str.lower() == nome_l) | (df_f['Voluntário 2'].astype(str).str.lower() == nome_l)]
@@ -131,7 +140,7 @@ try:
     elif filtro_status == "Vagas Abertas":
         df_f = df_f[df_f.apply(lambda x: "Vaga" in info_status(x), axis=1)]
 
-    # --- 6. EXIBIÇÃO ---
+    # --- 6. CARDS ---
     st.subheader(f"📋 Atividades: {len(df_f)}")
     
     for i, row in df_f.iterrows():
@@ -142,6 +151,7 @@ try:
         
         v1_val = str(row.get('Voluntário 1', '')).strip()
         v2_val = str(row.get('Voluntário 2', '')).strip()
+        dep_val = str(row.get(col_dep, '')).strip()
         usuario_logado = st.session_state.nome_usuario.strip().lower()
         
         ja_inscrito = (v1_val.lower() == usuario_logado or v2_val.lower() == usuario_logado)
@@ -153,7 +163,10 @@ try:
                     <span style="color: {txt_cor};">{status_txt}</span>
                     <span style="color: {txt_cor};">{row['Data_Dt'].strftime('%d/%m')} - {row['Dia_Extenso']}</span>
                 </div>
-                <h3 style="margin: 8px 0; color: {txt_cor}; border: none; font-size: 1.2em;">{row[col_ev]}</h3>
+                <h3 style="margin: 5px 0 0 0; color: {txt_cor}; border: none; font-size: 1.25em;">{row[col_ev]}</h3>
+                <div style="font-size: 0.9em; font-weight: 600; opacity: 0.85; margin-bottom: 8px;">
+                    🏢 {dep_val}
+                </div>
                 <div style="font-size: 1em; margin-bottom: 8px;">
                     ⏰ <b>Horário:</b> {row[col_hr]} | 🎓 <b>Nível:</b> {nivel_row}
                 </div>
@@ -170,15 +183,9 @@ try:
             st.button("🚫 ESCALA COMPLETA", key=f"btn_{i}", disabled=True, width="stretch")
         else:
             if st.button(f"Quero me inscrever", key=f"btn_{i}", type="primary", width="stretch"):
-                # NOVA LÓGICA DE COLUNA BASEADA NA SUA LISTA:
-                # 8 = Voluntário 1 (H)
-                # 9 = Voluntário 2 (I)
-                if v1_val == "":
-                    vaga_alvo, coluna_alvo = "Voluntário 1", 8
-                else:
-                    vaga_alvo, coluna_alvo = "Voluntário 2", 9
-                
-                confirmar_dialog(sheet, int(row['index'])+2, row, vaga_alvo, coluna_alvo, col_ev, col_hr)
+                # Lógica de alocação corrigida (Colunas 8 e 9 conforme sua planilha)
+                v_alvo, c_alvo = ("Voluntário 1", 8) if v1_val == "" else ("Voluntário 2", 9)
+                confirmar_dialog(sheet, int(row['index'])+2, row, v_alvo, c_alvo, col_ev, col_hr)
 
     st.divider()
     if st.button("Sair do Sistema", icon="🚪"):
