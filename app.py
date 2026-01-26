@@ -37,7 +37,6 @@ def load_data():
     return sheet, df
 
 # --- 2. CONFIGURAÇÕES VISUAIS ---
-# Atualizado: "AV2/" no lugar de "Av.2/"
 cores_niveis = {
     "Nenhum": "#FFFFFF", "BAS": "#C8E6C9", "AV1": "#FFCDD2", "IN": "#BBDEFB",
     "AV2": "#795548", "AV2-24": "#795548", "AV2-23": "#795548", "AV2/": "#795548",
@@ -65,12 +64,13 @@ def confirmar_dialog(sheet, linha, row, vaga_n, col_idx, col_ev, col_hr):
     st.write(f"👤 **Vaga:** {vaga_n}")
     
     if st.button("Confirmar", type="primary", width="stretch"):
-        with st.spinner("Registrando..."):
+        with st.spinner("Registrando na Planilha..."):
+            # AQUI ESTÁ A CORREÇÃO: sheet.update_cell usa índice 1-based (8 para Voluntário 1, 9 para Voluntário 2)
             sheet.update_cell(linha, col_idx, st.session_state.nome_usuario)
             st.cache_resource.clear()
             st.rerun()
 
-# --- 4. LOGIN ---
+# --- 4. LOGIN E CSS ---
 st.set_page_config(page_title="ProVida Escala", layout="centered")
 
 st.markdown("""
@@ -79,6 +79,7 @@ st.markdown("""
         background-color: #333333 !important;
         color: white !important;
         opacity: 1 !important;
+        border: none;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -96,11 +97,10 @@ if not st.session_state.autenticado:
                 st.rerun()
     st.stop()
 
-# --- 5. DATA ---
+# --- 5. PROCESSAMENTO DE DADOS ---
 try:
     sheet, df = load_data()
-    col_ev = next((c for c in df.columns if 'Evento' in c), 'Evento')
-    # Busca por "Horário" (com acento) ou "Horario" (sem acento)
+    col_ev = next((c for c in df.columns if 'Evento' in c), 'Nome do Evento')
     col_hr = next((c for c in df.columns if c.lower() in ['horário', 'horario', 'hora']), 'Horario')
     
     df['Data_Dt'] = pd.to_datetime(df['Data Específica'], errors='coerce', dayfirst=True)
@@ -110,6 +110,7 @@ try:
 
     st.title(f"🤝 Olá, {st.session_state.nome_usuario.split()[0]}")
     
+    # Filtros Rápidos
     st.write("🔍 **Filtros Rápidos:**")
     filtro_status = st.pills("Ver apenas:", ["Tudo", "Minhas Inscrições", "Sem Voluntários", "Vagas Abertas"], default="Tudo")
     
@@ -130,7 +131,7 @@ try:
     elif filtro_status == "Vagas Abertas":
         df_f = df_f[df_f.apply(lambda x: "Vaga" in info_status(x), axis=1)]
 
-    # --- 6. CARDS ---
+    # --- 6. EXIBIÇÃO ---
     st.subheader(f"📋 Atividades: {len(df_f)}")
     
     for i, row in df_f.iterrows():
@@ -169,11 +170,13 @@ try:
             st.button("🚫 ESCALA COMPLETA", key=f"btn_{i}", disabled=True, width="stretch")
         else:
             if st.button(f"Quero me inscrever", key=f"btn_{i}", type="primary", width="stretch"):
-                # Lógica de alocação corrigida: se v1_val for vazio, aloca em V1, senão V2
+                # NOVA LÓGICA DE COLUNA BASEADA NA SUA LISTA:
+                # 8 = Voluntário 1 (H)
+                # 9 = Voluntário 2 (I)
                 if v1_val == "":
-                    vaga_alvo, coluna_alvo = "Voluntário 1", 7
+                    vaga_alvo, coluna_alvo = "Voluntário 1", 8
                 else:
-                    vaga_alvo, coluna_alvo = "Voluntário 2", 8
+                    vaga_alvo, coluna_alvo = "Voluntário 2", 9
                 
                 confirmar_dialog(sheet, int(row['index'])+2, row, vaga_alvo, coluna_alvo, col_ev, col_hr)
 
