@@ -6,7 +6,7 @@ from datetime import datetime
 import textwrap
 import re
 
-# --- 1. CONEXÃO (Mantida) ---
+# --- 1. CONEXÃO ---
 @st.cache_resource
 def get_gspread_client():
     try:
@@ -55,16 +55,19 @@ def info_status(row):
     if v1 == "" or v2 == "": return "🟡 1 Vaga"
     return "🟢 Completo"
 
-# --- 3. DIALOG ---
+# --- 3. DIALOG DE CONFIRMAÇÃO ---
 @st.dialog("Confirmar Inscrição")
 def confirmar_dialog(sheet, linha, row, vaga_n, col_idx, col_ev, col_hr):
     st.markdown(f"### {row[col_ev]}")
     st.write(f"📅 **Data:** {row['Data_Dt'].strftime('%d/%m')} ({row['Dia_Extenso']})")
     st.write(f"👤 **Vaga:** {vaga_n}")
+    
     if st.button("Confirmar", type="primary", width="stretch"):
-        sheet.update_cell(linha, col_idx, st.session_state.nome_usuario)
-        st.cache_resource.clear()
-        st.rerun()
+        with st.spinner("Registrando..."):
+            # Atualiza a célula correta na planilha (G para V1, H para V2)
+            sheet.update_cell(linha, col_idx, st.session_state.nome_usuario)
+            st.cache_resource.clear()
+            st.rerun()
 
 # --- 4. LOGIN ---
 st.set_page_config(page_title="ProVida Escala", layout="centered")
@@ -82,7 +85,7 @@ if not st.session_state.autenticado:
                 st.rerun()
     st.stop()
 
-# --- 5. PROCESSAMENTO ---
+# --- 5. DATA ---
 try:
     sheet, df = load_data()
     col_ev = next((c for c in df.columns if 'Evento' in c), 'Evento')
@@ -93,16 +96,11 @@ try:
     df['Niv_N'] = df['Nível'].astype(str).str.strip().map(mapa_niveis_num).fillna(99)
     df = df.sort_values(by=['Data_Dt', col_hr]).reset_index(drop=False)
 
-    # --- 6. INTERFACE DE FILTROS RÁPIDOS (SEM SIDEBAR) ---
     st.title(f"🤝 Olá, {st.session_state.nome_usuario.split()[0]}")
     
-    # Usando st.pills para filtros de um clique (Novidade Streamlit)
+    # Filtros Rápidos
     st.write("🔍 **Filtros Rápidos:**")
-    filtro_status = st.pills(
-        "Ver apenas:",
-        ["Tudo", "Minhas Inscrições", "Sem Voluntários", "Vagas Abertas"],
-        default="Tudo"
-    )
+    filtro_status = st.pills("Ver apenas:", ["Tudo", "Minhas Inscrições", "Sem Voluntários", "Vagas Abertas"], default="Tudo")
     
     with st.expander("📅 Filtrar por Data ou Nível"):
         col1, col2 = st.columns(2)
@@ -110,33 +108,32 @@ try:
         niveis_disp = sorted(df['Nível'].unique().tolist())
         f_nivel = col2.multiselect("Nível específico:", niveis_disp)
 
-    # Lógica de Filtros
     df_f = df[(df['Niv_N'] <= st.session_state.nivel_num) & (df['Data_Dt'].dt.date >= f_dat)].copy()
 
-    if f_nivel:
-        df_f = df_f[df_f['Nível'].isin(f_nivel)]
-
+    if f_nivel: df_f = df_f[df_f['Nível'].isin(f_nivel)]
     if filtro_status == "Minhas Inscrições":
-        nome = st.session_state.nome_usuario.strip().lower()
-        df_f = df_f[(df_f['Voluntário 1'].astype(str).str.lower().str.contains(nome)) | 
-                    (df_f['Voluntário 2'].astype(str).str.lower().str.contains(nome))]
-    
+        nome_l = st.session_state.nome_usuario.strip().lower()
+        df_f = df_f[(df_f['Voluntário 1'].astype(str).str.lower() == nome_l) | (df_f['Voluntário 2'].astype(str).str.lower() == nome_l)]
     elif filtro_status == "Sem Voluntários":
-        df_f = df_f[(df_f['Voluntário 1'].astype(str).str.strip() == "") & 
-                    (df_f['Voluntário 2'].astype(str).str.strip() == "")]
-    
+        df_f = df_f[(df_f['Voluntário 1'].astype(str).str.strip() == "") & (df_f['Voluntário 2'].astype(str).str.strip() == "")]
     elif filtro_status == "Vagas Abertas":
         df_f = df_f[df_f.apply(lambda x: "Vaga" in info_status(x), axis=1)]
 
-    # --- 7. EXIBIÇÃO ---
-    st.subheader(f"📋 Atividades Encontradas: {len(df_f)}")
+    # --- 6. CARDS ---
+    st.subheader(f"📋 Atividades: {len(df_f)}")
     
     for i, row in df_f.iterrows():
         status_txt = info_status(row)
         nivel_row = str(row['Nível']).strip()
         bg_cor = cores_niveis.get(nivel_row, "#FFFFFF")
         txt_cor = cor_texto(nivel_row)
+        
         v1_val, v2_val = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
+        usuario_logado = st.session_state.nome_usuario.strip().lower()
+        
+        # Verificações de Segurança
+        ja_inscrito = (v1_val.lower() == usuario_logado or v2_val.lower() == usuario_logado)
+        cheio = (v1_val != "" and v2_val != "")
 
         st.markdown(f"""
             <div style="background-color: {bg_cor}; padding: 15px; border-radius: 10px 10px 0 0; border: 1px solid #ddd; color: {txt_cor}; margin-top: 15px;">
@@ -155,13 +152,19 @@ try:
             </div>
         """, unsafe_allow_html=True)
 
-        if "Completo" not in status_txt:
-            if st.button(f"Quero me inscrever", key=f"btn_{i}", type="primary", width="stretch"):
-                confirmar_dialog(sheet, int(row['index'])+2, row, ("Voluntário 1" if v1_val=="" else "Voluntário 2"), (7 if v1_val=="" else 8), col_ev, col_hr)
+        # Lógica do Botão com as Correções solicitadas
+        if ja_inscrito:
+            st.button("✅ Você já está inscrito", key=f"btn_{i}", disabled=True, width="stretch")
+        elif cheio:
+            st.button("🚫 Escala Completa", key=f"btn_{i}", disabled=True, width="stretch")
         else:
-            msg = "✅ Você está inscrito" if st.session_state.nome_usuario.lower() in [v1_val.lower(), v2_val.lower()] else "✅ Escala Completa"
-            st.button(msg, key=f"btn_{i}", disabled=True, width="stretch")
+            if st.button(f"Quero me inscrever", key=f"btn_{i}", type="primary", width="stretch"):
+                # DETERMINA A VAGA CORRETA: Se V1 ocupado, vai para V2
+                vaga_alvo = "Voluntário 2" if v1_val != "" else "Voluntário 1"
+                coluna_alvo = 8 if v1_val != "" else 7 # Coluna 7=G (V1), 8=H (V2)
+                confirmar_dialog(sheet, int(row['index'])+2, row, vaga_alvo, coluna_alvo, col_ev, col_hr)
 
+    st.divider()
     if st.button("Sair do Sistema", icon="🚪"):
         st.session_state.autenticado = False
         st.rerun()
