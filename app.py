@@ -85,32 +85,43 @@ if st.session_state.user is None:
     
     if st.session_state.modo_edicao:
         st.subheader("📝 Alterar Meus Dados")
-        email_busca = st.text_input("E-mail cadastrado:").strip().lower()
-        if email_busca:
+        email_busca = st.text_input("Confirme seu e-mail cadastrado para editar:").strip().lower()
+        
+        # Botão para verificar o e-mail na edição
+        btn_verificar = st.button("Buscar Cadastro", type="primary")
+        
+        if email_busca and (btn_verificar or (email_busca != "" and st.session_state.get('last_email_edit') != email_busca)):
+            st.session_state['last_email_edit'] = email_busca
             user_row = df_us[df_us['Email'].astype(str).str.lower() == email_busca]
+            
             if not user_row.empty:
                 dados = user_row.iloc[0]; idx_l = user_row.index[0] + 2
-                with st.form("edicao"):
+                st.success("Cadastro encontrado! Atualize seus dados abaixo:")
+                with st.form("edicao_form"):
                     n_e = st.text_input("Nome Crachá:", value=dados['Nome'])
                     t_e = st.text_input("Telefone:", value=dados['Telefone'])
                     d_atuais = str(dados['Departamentos']).split(",") if dados['Departamentos'] else []
                     d_e = st.multiselect("Departamentos:", lista_deps_fixa, default=[x for x in d_atuais if x in lista_deps_fixa])
                     niv_l = list(cores_niveis.keys())
                     niv_e = st.selectbox("Nível:", niv_l, index=niv_l.index(dados['Nivel']) if dados['Nivel'] in niv_l else 0)
-                    if st.form_submit_button("Atualizar Dados"):
+                    
+                    if st.form_submit_button("Salvar Novas Informações"):
                         sheet_us.update(f"A{idx_l}:E{idx_l}", [[email_busca, n_e, t_e, ",".join(d_e), niv_e]])
-                        st.success("Atualizado!"); st.session_state.modo_edicao = False
+                        st.success("Dados atualizados com sucesso!"); st.session_state.modo_edicao = False
                         st.cache_resource.clear(); st.rerun()
-            else: st.error("E-mail não encontrado.")
-        if st.button("Voltar"): st.session_state.modo_edicao = False; st.rerun()
+            else:
+                st.error("E-mail não encontrado em nossa base de dados.")
+        
+        st.markdown("---")
+        if st.button("Voltar para o Login"):
+            st.session_state.modo_edicao = False
+            st.rerun()
             
     else:
-        # TELA DE LOGIN COM BOTÃO
+        # TELA DE LOGIN
         email_in = st.text_input("Digite seu e-mail para entrar:").strip().lower()
+        btn_entrar = st.button("Entrar no Sistema", type="primary")
         
-        btn_entrar = st.button("Entrar no Sistema", type="primary", width="stretch")
-        
-        # O sistema entra se apertar o botão OU se der Enter no campo de texto
         if email_in and (btn_entrar or (email_in != "" and st.session_state.get('last_email') != email_in)):
             st.session_state['last_email'] = email_in
             u_row = df_us[df_us['Email'].astype(str).str.lower() == email_in]
@@ -119,7 +130,6 @@ if st.session_state.user is None:
                 st.session_state.user = u_row.iloc[0].to_dict()
                 st.rerun()
             else:
-                # SE NÃO EXISTE, FORMULÁRIO DE CADASTRO
                 st.info("E-mail não cadastrado. Preencha os dados para criar seu perfil:")
                 with st.form("cad_novo"):
                     nc = st.text_input("Nome Crachá:")
@@ -140,14 +150,12 @@ if st.session_state.user is None:
             st.rerun()
     st.stop()
 
-# --- 6. DASHBOARD (LOGADO) ---
+# --- 6. DASHBOARD ---
 user = st.session_state.user
 st.title(f"🤝 Olá, {user['Nome'].split()[0]}!")
 
-# FILTRO RÁPIDO
 filtro_status = st.pills("Status da Vaga:", ["Tudo", "Minhas Inscrições", "Vagas Abertas"], default="Tudo")
 
-# FILTROS AVANÇADOS (EXPANDER)
 with st.expander("📅 Filtros de Data, Nível e Departamento"):
     c1, c2 = st.columns(2)
     f_data = c1.date_input("Ver a partir de:", datetime.now().date())
@@ -161,7 +169,6 @@ df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fi
 nivel_user_num = mapa_niveis_num.get(user['Nivel'], 0)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 
-# Filtros Aplicados
 df_f = df_ev[
     (df_ev['Departamento'].isin(f_depto)) & 
     (df_ev['Niv_N'] <= nivel_user_num) & 
@@ -177,7 +184,6 @@ if filtro_status == "Minhas Inscrições":
 elif filtro_status == "Vagas Abertas":
     df_f = df_f[df_f.apply(lambda x: str(x['Voluntário 1']).strip() == "" or str(x['Voluntário 2']).strip() == "", axis=1)]
 
-# Cards
 st.subheader(f"📋 Atividades: {len(df_f)}")
 
 for i, row in df_f.iterrows():
