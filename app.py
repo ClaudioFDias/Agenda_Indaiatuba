@@ -31,15 +31,12 @@ def get_gspread_client():
 def load_data():
     client = get_gspread_client()
     ss = client.open_by_key("1paP1ZB2ufwCc95T_gdCR92kx-suXbROnDfbWMC_ka0c")
-    
     sheet_ev = ss.worksheet("Calendario_Eventos")
     sheet_us = ss.worksheet("Usuarios") 
     
-    # Carrega Eventos
     df_ev = pd.DataFrame(sheet_ev.get_all_records())
     df_ev.columns = [c.strip() for c in df_ev.columns]
     
-    # Carrega Usuários com tratamento de erro se estiver vazio
     data_us = sheet_us.get_all_records()
     if not data_us:
         df_us = pd.DataFrame(columns=['Email', 'Nome', 'Telefone', 'Departamentos', 'Nivel'])
@@ -71,53 +68,43 @@ def confirmar_dialog(sheet, linha, row, vaga_n, col_idx):
 # --- 4. FLUXO DE ACESSO ---
 st.set_page_config(page_title="ProVida Escala", layout="centered")
 
-# Estilo para botões escuros quando desabilitados
 st.markdown("""
     <style>
-    .stButton > button:disabled {
-        background-color: #333333 !important;
-        color: white !important;
-        opacity: 1 !important;
-    }
+    .stButton > button:disabled { background-color: #333333 !important; color: white !important; opacity: 1 !important; }
     </style>
 """, unsafe_allow_html=True)
 
 if 'user' not in st.session_state: st.session_state.user = None
 
-try:
-    sheet_ev, sheet_us, df_ev, df_us = load_data()
-except Exception as e:
-    st.error(f"Erro ao carregar abas da planilha: {e}")
-    st.stop()
+sheet_ev, sheet_us, df_ev, df_us = load_data()
 
+# LÓGICA DE LOGIN SEM "CLIQUE DUPLO"
 if st.session_state.user is None:
     st.title("🤝 Escala de Voluntários")
     
+    # O segredo está no on_change ou na verificação imediata após o input
     email_input = st.text_input("Digite seu e-mail para entrar:").strip().lower()
     
     if email_input:
-        # Verifica se a coluna Email existe para evitar o KeyError
         if 'Email' in df_us.columns:
             user_row = df_us[df_us['Email'].astype(str).str.lower() == email_input]
         else:
-            user_row = pd.DataFrame() # Caso a planilha esteja sem cabeçalho correto
+            user_row = pd.DataFrame()
 
         if not user_row.empty:
-            # LOGIN
-            u_data = user_row.iloc[0].to_dict()
-            st.session_state.user = u_data
-            st.success(f"Bem-vindo de volta, {u_data['Nome']}!")
-            if st.button("Acessar Escala"): st.rerun()
+            # LOGIN DIRETO: Atribui ao session_state e recarrega a página uma única vez
+            st.session_state.user = user_row.iloc[0].to_dict()
+            st.rerun() 
         else:
-            # CADASTRO
-            st.info("E-mail não cadastrado. Preencha os dados abaixo para criar seu perfil:")
+            # CADASTRO: Aparece apenas se o e-mail não existir
+            st.info("E-mail não cadastrado. Crie seu perfil abaixo:")
             with st.form("cadastro_form"):
                 nome_c = st.text_input("Nome como está no crachá:")
                 tel_c = st.text_input("Telefone (ex: 11999999999):")
                 deps_c = st.multiselect("Departamentos que você participa:", lista_deps)
                 niv_c = st.selectbox("Nível do Curso:", list(cores_niveis.keys()))
                 
-                if st.form_submit_button("Criar meu Perfil"):
+                if st.form_submit_button("Criar meu Perfil e Entrar"):
                     if nome_c and tel_c and deps_c:
                         novo_user = [email_input, nome_c, tel_c, ",".join(deps_c), niv_c]
                         sheet_us.append_row(novo_user)
@@ -128,14 +115,14 @@ if st.session_state.user is None:
                         st.cache_resource.clear()
                         st.rerun()
                     else:
-                        st.error("Preencha todos os campos para continuar.")
+                        st.error("Preencha todos os campos.")
     st.stop()
 
-# --- 5. DASHBOARD ---
+# --- 5. DASHBOARD (SÓ EXECUTA SE ESTIVER LOGADO) ---
 user = st.session_state.user
 st.title(f"🤝 Olá, {user['Nome'].split()[0]}!")
 
-# Preferências e Filtros
+# Preferências automáticas
 meus_deps = user['Departamentos'].split(",")
 nivel_max_num = mapa_niveis_num.get(user['Nivel'], 0)
 
@@ -143,12 +130,12 @@ with st.expander("🔍 Filtros de Visualização"):
     f_dat = st.date_input("Ver a partir de:", datetime.now().date())
     filtro_status = st.pills("Status:", ["Tudo", "Minhas Inscrições", "Vagas Abertas"], default="Tudo")
 
-# Preparação dos Eventos
+# Processamento
 df_ev['Data_Dt'] = pd.to_datetime(df_ev['Data Específica'], errors='coerce', dayfirst=True)
 df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fillna(99)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 
-# Aplicação das Regras (Filtra por Deptos do Usuário e Nível)
+# Filtro por Perfil e Data
 df_f = df_ev[
     (df_ev['Departamento'].isin(meus_deps)) & 
     (df_ev['Niv_N'] <= nivel_max_num) & 
@@ -161,16 +148,15 @@ if filtro_status == "Minhas Inscrições":
 elif filtro_status == "Vagas Abertas":
     df_f = df_f[df_f.apply(lambda x: str(x['Voluntário 1']).strip() == "" or str(x['Voluntário 2']).strip() == "", axis=1)]
 
-# --- 6. CARDS ---
+# --- 6. EXIBIÇÃO ---
 if df_f.empty:
-    st.info("Nenhuma atividade encontrada para seus departamentos ou nível.")
+    st.info("Nenhuma atividade disponível para seu perfil nestes filtros.")
 else:
     for i, row in df_f.iterrows():
         v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
         bg = cores_niveis.get(str(row['Nível']).strip(), "#FFFFFF")
         tx = "#FFFFFF" if "AV2" in str(row['Nível']) else "#000000"
         
-        # Status
         status = "🟢 Completo" if v1 and v2 else ("🟡 1 Vaga" if v1 or v2 else "🔴 2 Vagas")
         ja_in = (v1.lower() == user['Nome'].lower() or v2.lower() == user['Nome'].lower())
 
@@ -184,13 +170,13 @@ else:
                 <div style="font-size: 0.9em; font-weight: 600; opacity: 0.85; margin-bottom: 5px;">🏢 {row['Departamento']}</div>
                 <div style="font-size: 0.9em; margin-bottom: 8px;">⏰ {row['Horario']} | 🎓 Nível: {row['Nível']}</div>
                 <div style="background: rgba(0,0,0,0.15); padding: 8px; border-radius: 5px; font-size: 0.9em;">
-                    <b>Voluntário 1:</b> {v1}<br><b>Voluntário 2:</b> {v2}
+                    <b>V1:</b> {v1}<br><b>V2:</b> {v2}
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
         if ja_in:
-            st.button("✅ VOCÊ ESTÁ NESTA ESCALA", key=f"btn_{i}", disabled=True, width="stretch")
+            st.button("✅ VOCÊ JÁ ESTÁ INSCRITO", key=f"btn_{i}", disabled=True, width="stretch")
         elif v1 and v2:
             st.button("🚫 ESCALA COMPLETA", key=f"btn_{i}", disabled=True, width="stretch")
         else:
