@@ -37,14 +37,15 @@ def load_data():
     return sheet, df
 
 # --- 2. CONFIGURAÇÕES VISUAIS ---
+# Atualizado: "AV2/" no lugar de "Av.2/"
 cores_niveis = {
     "Nenhum": "#FFFFFF", "BAS": "#C8E6C9", "AV1": "#FFCDD2", "IN": "#BBDEFB",
-    "AV2": "#795548", "AV2-24": "#795548", "AV2-23": "#795548", "Av.2/": "#795548",
+    "AV2": "#795548", "AV2-24": "#795548", "AV2-23": "#795548", "AV2/": "#795548",
     "AV3": "#E1BEE7", "AV3A": "#E1BEE7", "AV3/": "#E1BEE7", "AV4": "#FFF9C4", "AV4A": "#FFF9C4"
 }
 
 def cor_texto(nivel):
-    return "#FFFFFF" if "AV2" in nivel else "#000000"
+    return "#FFFFFF" if "AV2" in str(nivel) else "#000000"
 
 mapa_niveis_num = {k: i for i, k in enumerate(cores_niveis.keys())}
 dias_semana_extenso = {0: "Segunda", 1: "Terça", 2: "Quarta", 3: "Quinta", 4: "Sexta", 5: "Sábado", 6: "Domingo"}
@@ -72,7 +73,6 @@ def confirmar_dialog(sheet, linha, row, vaga_n, col_idx, col_ev, col_hr):
 # --- 4. LOGIN ---
 st.set_page_config(page_title="ProVida Escala", layout="centered")
 
-# CSS para escurecer botões desabilitados
 st.markdown("""
     <style>
     .stButton > button:disabled {
@@ -100,6 +100,7 @@ if not st.session_state.autenticado:
 try:
     sheet, df = load_data()
     col_ev = next((c for c in df.columns if 'Evento' in c), 'Evento')
+    # Busca por "Horário" (com acento) ou "Horario" (sem acento)
     col_hr = next((c for c in df.columns if c.lower() in ['horário', 'horario', 'hora']), 'Horario')
     
     df['Data_Dt'] = pd.to_datetime(df['Data Específica'], errors='coerce', dayfirst=True)
@@ -138,7 +139,6 @@ try:
         bg_cor = cores_niveis.get(nivel_row, "#FFFFFF")
         txt_cor = cor_texto(nivel_row)
         
-        # Limpeza rigorosa para evitar erro de substituição
         v1_val = str(row.get('Voluntário 1', '')).strip()
         v2_val = str(row.get('Voluntário 2', '')).strip()
         usuario_logado = st.session_state.nome_usuario.strip().lower()
@@ -146,7 +146,6 @@ try:
         ja_inscrito = (v1_val.lower() == usuario_logado or v2_val.lower() == usuario_logado)
         cheio = (v1_val != "" and v2_val != "")
 
-        # Card Visual
         st.markdown(f"""
             <div style="background-color: {bg_cor}; padding: 15px; border-radius: 10px 10px 0 0; border: 1px solid #ddd; color: {txt_cor}; margin-top: 15px;">
                 <div style="display: flex; justify-content: space-between; font-weight: 800; font-size: 0.9em;">
@@ -164,20 +163,17 @@ try:
             </div>
         """, unsafe_allow_html=True)
 
-        # BOTÕES COM LÓGICA DE SEGURANÇA REFORÇADA
         if ja_inscrito:
             st.button("✅ VOCÊ JÁ ESTÁ INSCRITO", key=f"btn_{i}", disabled=True, width="stretch")
         elif cheio:
             st.button("🚫 ESCALA COMPLETA", key=f"btn_{i}", disabled=True, width="stretch")
         else:
             if st.button(f"Quero me inscrever", key=f"btn_{i}", type="primary", width="stretch"):
-                # Lógica de alocação: se o campo V1 for nulo, vazio ou conter apenas espaços
+                # Lógica de alocação corrigida: se v1_val for vazio, aloca em V1, senão V2
                 if v1_val == "":
-                    vaga_alvo = "Voluntário 1"
-                    coluna_alvo = 7 # Coluna G
+                    vaga_alvo, coluna_alvo = "Voluntário 1", 7
                 else:
-                    vaga_alvo = "Voluntário 2"
-                    coluna_alvo = 8 # Coluna H
+                    vaga_alvo, coluna_alvo = "Voluntário 2", 8
                 
                 confirmar_dialog(sheet, int(row['index'])+2, row, vaga_alvo, coluna_alvo, col_ev, col_hr)
 
