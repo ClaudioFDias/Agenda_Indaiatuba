@@ -57,9 +57,9 @@ def confirmar_edicao_dialog(sheet, linha, novos_dados):
     - **Nome:** {novos_dados[1]}
     - **Telefone:** {novos_dados[2]}
     - **Nível:** {novos_dados[4]}
-    - **Departamentos:** {novos_dados[3]}
+    - **Departamentos:** {novos_dados[3] if novos_dados[3] else "Nenhum selecionado"}
     """)
-    st.info("Ao confirmar, você passará a ver apenas as escalas dos departamentos listados acima.")
+    st.info("Ao confirmar, o app será atualizado para refletir essas mudanças.")
     if st.button("Confirmar e Salvar", type="primary", width="stretch"):
         sheet.update(f"A{linha}:E{linha}", [novos_dados])
         st.session_state.user = {"Email": novos_dados[0], "Nome": novos_dados[1], "Telefone": novos_dados[2], "Departamentos": novos_dados[3], "Nivel": novos_dados[4]}
@@ -117,8 +117,18 @@ if st.session_state.user is None:
                 dados = st.session_state['edit_row']
                 n_e = st.text_input("Nome Crachá:", value=dados['Nome'])
                 t_e = st.text_input("Telefone:", value=dados['Telefone'])
-                d_e = st.multiselect("Seus Departamentos (você só verá estes):", options=deps_na_planilha, 
-                                     default=[x.strip() for x in str(dados['Departamentos']).split(",") if x.strip() in deps_na_planilha])
+                
+                # CORREÇÃO AQUI: Garante que o multiselect pegue apenas o que está no banco do usuário
+                deps_usuario_lista = [d.strip() for d in str(dados['Departamentos']).split(",") if d.strip() != ""]
+                # Filtra apenas o que realmente existe na lista de departamentos da planilha para evitar erros
+                default_deps = [d for d in deps_usuario_lista if d in deps_na_planilha]
+                
+                d_e = st.multiselect(
+                    "Seus Departamentos (você só verá estes):", 
+                    options=deps_na_planilha, 
+                    default=default_deps
+                )
+                
                 niv_l = list(cores_niveis.keys())
                 niv_e = st.selectbox("Nível:", niv_l, index=niv_l.index(dados['Nivel']) if dados['Nivel'] in niv_l else 0)
                 
@@ -130,6 +140,7 @@ if st.session_state.user is None:
             st.session_state.pop('edit_row', None)
             st.rerun()
     else:
+        # LOGIN NORMAL
         with st.form("login"):
             em = st.text_input("E-mail para entrar:").strip().lower()
             if st.form_submit_button("Entrar no Sistema", type="primary", width="stretch"):
@@ -156,22 +167,19 @@ if st.session_state.user is None:
             st.rerun()
     st.stop()
 
-# --- 6. DASHBOARD ---
+# --- 6. DASHBOARD (Só acessível após Login) ---
 user = st.session_state.user
-# Lista de departamentos que o usuário PODE ver (baseado no cadastro dele)
 meus_deps = [d.strip() for d in str(user['Departamentos']).split(",") if d.strip() != ""]
 
 st.title(f"🤝 Olá, {user['Nome'].split()[0]}!")
 
-# Se o usuário não tiver nenhum depto vinculado, avisa
 if not meus_deps:
-    st.warning("⚠️ Você não possui departamentos vinculados ao seu perfil. Vá em 'Alterar Meus Dados' para selecionar onde você atua.")
+    st.warning("⚠️ Você não possui departamentos vinculados. Edite seu perfil para selecionar onde atua.")
     if st.button("Sair"): st.session_state.user = None; st.rerun()
     st.stop()
 
-# Filtros Principais
+# Filtros
 filtro_status = st.pills("Status:", ["Vagas Abertas", "Minhas Inscrições", "Tudo"], default="Vagas Abertas")
-# O filtro de departamento agora só mostra os departamentos que o usuário pertence
 f_depto_pill = st.pills("Departamento:", ["Todos"] + meus_deps, default="Todos")
 
 c1, c2 = st.columns(2)
@@ -180,15 +188,15 @@ with c1:
 with c2:
     f_data = st.date_input("A partir de:", value=date.today())
 
-# Processamento
+# Processamento de Dados
 df_ev['Data_Dt'] = pd.to_datetime(df_ev['Data Específica'], errors='coerce', dayfirst=True)
 df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fillna(99)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 
-# --- APLICAÇÃO DA TRAVA DE DEPARTAMENTO DO USUÁRIO ---
+# Filtro Restritivo por Depto do Usuário
 df_f = df_ev[df_ev['Departamento'].isin(meus_deps)].copy()
 
-# Aplicação dos filtros de interface
+# Filtros de Interface
 df_f = df_f[df_f['Niv_N'] <= mapa_niveis_num.get(user['Nivel'], 0)]
 if f_depto_pill != "Todos": df_f = df_f[df_f['Departamento'] == f_depto_pill]
 if f_nivel != "Todos": df_f = df_f[df_f['Nível'].astype(str).str.strip() == f_nivel]
@@ -199,9 +207,9 @@ if filtro_status == "Minhas Inscrições":
 elif filtro_status == "Vagas Abertas":
     df_f = df_f[df_f.apply(lambda x: str(x['Voluntário 1']).strip() == "" or str(x['Voluntário 2']).strip() == "", axis=1)]
 
-# Listagem
+# Renderização
 if df_f.empty:
-    st.info("Nenhuma atividade encontrada para seus departamentos ou filtros.")
+    st.info("Nenhuma atividade encontrada para seus departamentos.")
 else:
     for i, row in df_f.iterrows():
         v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
