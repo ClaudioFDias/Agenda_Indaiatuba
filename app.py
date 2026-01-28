@@ -59,8 +59,11 @@ dias_semana = {
 def confirmar_dialog(sheet, linha, row, vaga_n, col_idx):
     dia_pt = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
     st.markdown(f"### {row['Nível']} - {row['Nome do Evento']}")
+    st.divider()
     st.write(f"📅 **Data:** {dia_pt} - {row['Data_Dt'].strftime('%d/%m/%Y')}")
     st.write(f"⏰ **Horário:** {row['Horario']} | 🏢 **Depto:** {row['Departamento']}")
+    # Feedback da vaga específica na confirmação
+    st.info(f"📍 Você será inscrito como: **{vaga_n}**")
     st.divider()
     if st.button("Confirmar Inscrição", type="primary", width="stretch"):
         sheet.update_cell(linha, col_idx, st.session_state.user['Nome'])
@@ -76,7 +79,6 @@ st.markdown("""
         font-size: 1.3rem !important; font-weight: bold !important;
     }
     
-    /* Card Slim Ajustado */
     .card-container {
         padding: 15px; 
         border-radius: 12px 12px 0 0; 
