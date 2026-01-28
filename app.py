@@ -70,9 +70,27 @@ def confirmar_dialog(sheet, linha, row, vaga_n, col_idx):
         sheet.update_cell(linha, col_idx, st.session_state.user['Nome'])
         st.cache_resource.clear(); st.rerun()
 
-# --- 4. STYLE ---
+# --- 4. STYLE (Fontes maiores e Botão) ---
 st.set_page_config(page_title="ProVida Escala", layout="centered")
-st.markdown("""<style>.stButton > button:disabled { background-color: #333333 !important; color: white !important; opacity: 1 !important; border: 1px solid #111 !important; }</style>""", unsafe_allow_html=True)
+
+st.markdown("""
+    <style>
+    html, body, [class*="st-at"] {
+        font-size: 1.1rem !important;
+    }
+    .stButton > button:disabled {
+        background-color: #333333 !important;
+        color: white !important;
+        opacity: 1 !important;
+        border: 1px solid #111 !important;
+    }
+    /* Botão de Entrar maior */
+    div.stButton > button:first-child[kind="primary"] {
+        font-size: 1.5rem !important;
+        height: 4rem !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 if 'user' not in st.session_state: st.session_state.user = None
 if 'modo_edicao' not in st.session_state: st.session_state.modo_edicao = False
@@ -88,7 +106,9 @@ if st.session_state.user is None:
             email_b = st.text_input("E-mail cadastrado:").strip().lower()
             if st.form_submit_button("Buscar Cadastro", type="primary"):
                 user_row = df_us[df_us['Email'].astype(str).str.lower() == email_b]
-                if not user_row.empty: st.session_state['edit_row'] = user_row.iloc[0].to_dict(); st.session_state['edit_idx'] = user_row.index[0] + 2
+                if not user_row.empty: 
+                    st.session_state['edit_row'] = user_row.iloc[0].to_dict()
+                    st.session_state['edit_idx'] = user_row.index[0] + 2
                 else: st.error("Não encontrado.")
         
         if 'edit_row' in st.session_state:
@@ -102,14 +122,20 @@ if st.session_state.user is None:
                 if st.form_submit_button("Salvar Alterações"):
                     confirmar_edicao_dialog(sheet_us, st.session_state['edit_idx'], [dados['Email'], n_e, t_e, ",".join(d_e), niv_e])
         
-        if st.button("Voltar"): st.session_state.modo_edicao = False; st.session_state.pop('edit_row', None); st.rerun()
+        if st.button("Voltar"): 
+            st.session_state.modo_edicao = False; 
+            st.session_state.pop('edit_row', None); 
+            st.rerun()
     else:
         with st.form("login"):
             em = st.text_input("E-mail para entrar:").strip().lower()
-            if st.form_submit_button("Entrar", type="primary"):
+            if st.form_submit_button("Entrar no Sistema", type="primary", width="stretch"):
                 u = df_us[df_us['Email'].astype(str).str.lower() == em]
-                if not u.empty: st.session_state.user = u.iloc[0].to_dict(); st.rerun()
-                else: st.session_state['novo_em'] = em
+                if not u.empty: 
+                    st.session_state.user = u.iloc[0].to_dict()
+                    st.rerun()
+                else: 
+                    st.session_state['novo_em'] = em
         
         if 'novo_em' in st.session_state:
             with st.form("cad"):
@@ -124,19 +150,22 @@ if st.session_state.user is None:
         if st.button("⚙️ Alterar Meus Dados"): st.session_state.modo_edicao = True; st.rerun()
     st.stop()
 
-# --- 6. DASHBOARD (RESTAURADO) ---
+# --- 6. DASHBOARD ---
 user = st.session_state.user
 st.title(f"🤝 Olá, {user['Nome'].split()[0]}!")
 
-# Filtro Rápido
-filtro_status = st.pills("Status da Vaga:", ["Tudo", "Minhas Inscrições", "Vagas Abertas"], default="Tudo")
+# Filtros Padrão: Vagas Abertas
+filtro_status = st.pills("Status da Vaga:", ["Vagas Abertas", "Minhas Inscrições", "Tudo"], default="Vagas Abertas")
 
-# Filtros Avançados
-with st.expander("📅 Filtros de Data, Nível e Departamento"):
+# Departamentos como Pills clicáveis
+st.markdown("**Departamentos:**")
+f_depto_pill = st.pills("Selecione um departamento:", ["Todos"] + lista_deps_fixa, default="Todos")
+
+# Mais Opções
+with st.expander("📅 Outros Filtros"):
     c1, c2 = st.columns(2)
     f_data = c1.date_input("A partir de:", datetime.now().date())
     f_nivel = c2.multiselect("Nível específico:", sorted(df_ev['Nível'].unique().tolist()))
-    f_depto = st.multiselect("Filtrar Departamentos:", lista_deps_fixa, default=lista_deps_fixa)
 
 # Processamento
 df_ev['Data_Dt'] = pd.to_datetime(df_ev['Data Específica'], errors='coerce', dayfirst=True)
@@ -144,8 +173,13 @@ df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fi
 nivel_user_num = mapa_niveis_num.get(user['Nivel'], 0)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 
-# Aplicação Filtros
-df_f = df_ev[(df_ev['Departamento'].isin(f_depto)) & (df_ev['Niv_N'] <= nivel_user_num) & (df_ev['Data_Dt'].dt.date >= f_data)].copy()
+# Filtro de Departamento
+if f_depto_pill == "Todos":
+    dept_selecionados = lista_deps_fixa
+else:
+    dept_selecionados = [f_depto_pill]
+
+df_f = df_ev[(df_ev['Departamento'].isin(dept_selecionados)) & (df_ev['Niv_N'] <= nivel_user_num) & (df_ev['Data_Dt'].dt.date >= f_data)].copy()
 if f_nivel: df_f = df_f[df_f['Nível'].isin(f_nivel)]
 
 if filtro_status == "Minhas Inscrições":
@@ -154,8 +188,8 @@ if filtro_status == "Minhas Inscrições":
 elif filtro_status == "Vagas Abertas":
     df_f = df_f[df_f.apply(lambda x: str(x['Voluntário 1']).strip() == "" or str(x['Voluntário 2']).strip() == "", axis=1)]
 
-# Exibição (Cards como antes)
 st.subheader(f"📋 Atividades: {len(df_f)}")
+
 for i, row in df_f.iterrows():
     v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
     bg = cores_niveis.get(str(row['Nível']).strip(), "#FFFFFF")
@@ -164,21 +198,25 @@ for i, row in df_f.iterrows():
     ja_in = (v1.lower() == user['Nome'].lower() or v2.lower() == user['Nome'].lower())
 
     st.markdown(f"""
-        <div style="background-color: {bg}; padding: 15px; border-radius: 10px 10px 0 0; border: 1px solid #ddd; color: {tx}; margin-top: 15px;">
-            <div style="display: flex; justify-content: space-between; font-weight: 800; font-size: 0.85em;">
-                <span>{st_vaga}</span><span>{row['Data_Dt'].strftime('%d/%m')}</span>
+        <div style="background-color: {bg}; padding: 18px; border-radius: 12px 12px 0 0; border: 1px solid #ddd; color: {tx}; margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; font-weight: 800;">
+                <span style="font-size: 1em;">{st_vaga}</span>
+                <span style="font-size: 1.8em;">{row['Data_Dt'].strftime('%d/%m')}</span>
             </div>
-            <h3 style="margin: 5px 0; color: {tx}; border: none;">{row['Nome do Evento']}</h3>
-            <div style="font-size: 0.9em; font-weight: 600; opacity: 0.85; margin-bottom: 5px;">🏢 {row['Departamento']}</div>
-            <div style="font-size: 0.9em; margin-bottom: 8px;">⏰ {row['Horario']} | 🎓 Nível: {row['Nível']}</div>
-            <div style="background: rgba(0,0,0,0.15); padding: 8px; border-radius: 5px; font-size: 0.9em;">
-                <b>V1:</b> {v1}<br><b>V2:</b> {v2}
+            <h2 style="margin: 10px 0; color: {tx}; border: none; font-size: 1.5em;">{row['Nível']} - {row['Nome do Evento']}</h2>
+            <div style="font-weight: 700; margin-bottom: 5px;">🏢 {row['Departamento']}</div>
+            <div style="margin-bottom: 10px;"><b>Horário:</b> {row['Horario']}</div>
+            <div style="background: rgba(0,0,0,0.1); padding: 10px; border-radius: 8px;">
+                <b>Voluntário 1:</b> {v1 if v1 else "---"}<br>
+                <b>Voluntário 2:</b> {v2 if v2 else "---"}
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    if ja_in: st.button("✅ VOCÊ JÁ ESTÁ INSCRITO", key=f"bi_{i}", disabled=True, width="stretch")
-    elif v1 and v2: st.button("🚫 ESCALA COMPLETA", key=f"bf_{i}", disabled=True, width="stretch")
+    if ja_in: 
+        st.button("✅ VOCÊ JÁ ESTÁ INSCRITO", key=f"bi_{i}", disabled=True, width="stretch")
+    elif v1 and v2: 
+        st.button("🚫 SEM VAGAS", key=f"bf_{i}", disabled=True, width="stretch")
     else:
         if st.button("Quero me inscrever", key=f"bq_{i}", type="primary", width="stretch"):
             v_alvo, c_alvo = ("Voluntário 1", 8) if v1 == "" else ("Voluntário 2", 9)
