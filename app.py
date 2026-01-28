@@ -2,7 +2,7 @@ import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
 import textwrap
 import re
 
@@ -62,7 +62,6 @@ def confirmar_dialog(sheet, linha, row, vaga_n, col_idx):
     st.divider()
     st.write(f"📅 **Data:** {dia_pt} - {row['Data_Dt'].strftime('%d/%m/%Y')}")
     st.write(f"⏰ **Horário:** {row['Horario']} | 🏢 **Depto:** {row['Departamento']}")
-    # Feedback da vaga específica na confirmação
     st.info(f"📍 Você será inscrito como: **{vaga_n}**")
     st.divider()
     if st.button("Confirmar Inscrição", type="primary", width="stretch"):
@@ -76,7 +75,7 @@ st.markdown("""
     <style>
     html, body, [class*="st-at"], .stMarkdown p { font-size: 1.15rem !important; }
     .stSelectbox label, .stMultiSelect label, .stDateInput label, .stPills label {
-        font-size: 1.3rem !important; font-weight: bold !important;
+        font-size: 1.1rem !important; font-weight: bold !important;
     }
     
     .card-container {
@@ -99,7 +98,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if 'user' not in st.session_state: st.session_state.user = None
-if 'modo_edicao' not in st.session_state: st.session_state.modo_edicao = False
 
 sheet_ev, sheet_us, df_ev, df_us = load_data()
 
@@ -127,53 +125,81 @@ if st.session_state.user is None:
 user = st.session_state.user
 st.title(f"🤝 Olá, {user['Nome'].split()[0]}!")
 
+# Filtros Principais
 filtro_status = st.pills("Status:", ["Vagas Abertas", "Minhas Inscrições", "Tudo"], default="Vagas Abertas")
 f_depto_pill = st.pills("Departamento:", ["Todos"] + lista_deps_fixa, default="Todos")
 
-# Processamento
+# Novos Filtros: Nível e Data
+c1, c2 = st.columns(2)
+with c1:
+    f_nivel = st.selectbox("Filtrar por Nível:", ["Todos"] + list(cores_niveis.keys()))
+with c2:
+    f_data = st.date_input("A partir de:", value=date.today())
+
+# Processamento de Dados
 df_ev['Data_Dt'] = pd.to_datetime(df_ev['Data Específica'], errors='coerce', dayfirst=True)
 df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fillna(99)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 
-dept_selecionados = lista_deps_fixa if f_depto_pill == "Todos" else [f_depto_pill]
-df_f = df_ev[(df_ev['Departamento'].isin(dept_selecionados)) & (df_ev['Niv_N'] <= mapa_niveis_num.get(user['Nivel'], 0))].copy()
+# Aplicação dos Filtros
+df_f = df_ev.copy()
 
+# 1. Filtro de Segurança (Nível do Usuário)
+df_f = df_f[df_f['Niv_N'] <= mapa_niveis_num.get(user['Nivel'], 0)]
+
+# 2. Filtro de Departamento
+if f_depto_pill != "Todos":
+    df_f = df_f[df_f['Departamento'] == f_depto_pill]
+
+# 3. Filtro de Status
 if filtro_status == "Minhas Inscrições":
-    df_f = df_f[(df_f['Voluntário 1'].astype(str).str.lower() == user['Nome'].lower()) | (df_f['Voluntário 2'].astype(str).str.lower() == user['Nome'].lower())]
+    df_f = df_f[(df_f['Voluntário 1'].astype(str).str.lower() == user['Nome'].lower()) | 
+                (df_f['Voluntário 2'].astype(str).str.lower() == user['Nome'].lower())]
 elif filtro_status == "Vagas Abertas":
     df_f = df_f[df_f.apply(lambda x: str(x['Voluntário 1']).strip() == "" or str(x['Voluntário 2']).strip() == "", axis=1)]
 
-for i, row in df_f.iterrows():
-    v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
-    bg = cores_niveis.get(str(row['Nível']).strip(), "#FFFFFF")
-    tx = "#FFFFFF" if "AV2" in str(row['Nível']) else "#000000"
-    st_vaga = "🟢 Cheio" if v1 and v2 else ("🟡 1 Vaga" if v1 or v2 else "🔴 2 Vagas")
-    dia_abreviado = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
+# 4. Novo: Filtro de Nível (Drop Down)
+if f_nivel != "Todos":
+    df_f = df_f[df_f['Nível'].astype(str).str.strip() == f_nivel]
 
-    st.markdown(f"""
-        <div class="card-container" style="background-color: {bg}; color: {tx};">
-            <div class="card-header">
-                <span style="font-size: 0.95em; opacity: 0.85;">{st_vaga}</span>
-                <span style="font-size: 1.45em;">{dia_abreviado} - {row['Data_Dt'].strftime('%d/%m')}</span>
-            </div>
-            <h2 class="card-title" style="color: {tx};">{row['Nível']} - {row['Nome do Evento']}</h2>
-            <div class="card-info-row">
-                <span>🏢 {row['Departamento']}</span> &nbsp;&nbsp; | &nbsp;&nbsp; <span>⏰ {row['Horario']}</span>
-            </div>
-            <div class="voluntarios-box">
-                <b>Voluntário 1:</b> {v1 if v1 else "---"}<br>
-                <b>Voluntário 2:</b> {v2 if v2 else "---"}
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+# 5. Novo: Filtro de Data
+df_f = df_f[df_f['Data_Dt'].dt.date >= f_data]
 
-    ja_in = (v1.lower() == user['Nome'].lower() or v2.lower() == user['Nome'].lower())
-    if ja_in: st.button("✅ VOCÊ JÁ ESTÁ INSCRITO", key=f"bi_{i}", disabled=True, width="stretch")
-    elif v1 and v2: st.button("🚫 SEM VAGAS", key=f"bf_{i}", disabled=True, width="stretch")
-    else:
-        if st.button("Quero me inscrever", key=f"bq_{i}", type="primary", width="stretch"):
-            v_alvo, c_alvo = ("Voluntário 1", 8) if v1 == "" else ("Voluntário 2", 9)
-            confirmar_dialog(sheet_ev, int(row['index'])+2, row, v_alvo, c_alvo)
+# Renderização dos Cards
+if df_f.empty:
+    st.warning("Nenhum evento encontrado para os filtros selecionados.")
+else:
+    for i, row in df_f.iterrows():
+        v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
+        bg = cores_niveis.get(str(row['Nível']).strip(), "#FFFFFF")
+        tx = "#FFFFFF" if "AV2" in str(row['Nível']) else "#000000"
+        st_vaga = "🟢 Cheio" if v1 and v2 else ("🟡 1 Vaga" if v1 or v2 else "🔴 2 Vagas")
+        dia_abreviado = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
+
+        st.markdown(f"""
+            <div class="card-container" style="background-color: {bg}; color: {tx};">
+                <div class="card-header">
+                    <span style="font-size: 0.95em; opacity: 0.85;">{st_vaga}</span>
+                    <span style="font-size: 1.45em;">{dia_abreviado} - {row['Data_Dt'].strftime('%d/%m')}</span>
+                </div>
+                <h2 class="card-title" style="color: {tx};">{row['Nível']} - {row['Nome do Evento']}</h2>
+                <div class="card-info-row">
+                    <span>🏢 {row['Departamento']}</span> &nbsp;&nbsp; | &nbsp;&nbsp; <span>⏰ {row['Horario']}</span>
+                </div>
+                <div class="voluntarios-box">
+                    <b>Voluntário 1:</b> {v1 if v1 else "---"}<br>
+                    <b>Voluntário 2:</b> {v2 if v2 else "---"}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        ja_in = (v1.lower() == user['Nome'].lower() or v2.lower() == user['Nome'].lower())
+        if ja_in: st.button("✅ VOCÊ JÁ ESTÁ INSCRITO", key=f"bi_{i}", disabled=True, width="stretch")
+        elif v1 and v2: st.button("🚫 SEM VAGAS", key=f"bf_{i}", disabled=True, width="stretch")
+        else:
+            if st.button("Quero me inscrever", key=f"bq_{i}", type="primary", width="stretch"):
+                v_alvo, c_alvo = ("Voluntário 1", 8) if v1 == "" else ("Voluntário 2", 9)
+                confirmar_dialog(sheet_ev, int(row['index'])+2, row, v_alvo, c_alvo)
 
 st.divider()
 if st.button("Sair"): st.session_state.user = None; st.rerun()
