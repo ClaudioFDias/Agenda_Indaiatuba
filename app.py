@@ -46,7 +46,6 @@ cores_niveis = {
     "AV2": "#795548", "AV2-24": "#795548", "AV2-23": "#795548", "AV2/": "#795548",
     "AV3": "#E1BEE7", "AV3A": "#E1BEE7", "AV3/": "#E1BEE7", "AV4": "#FFF9C4", "AV4A": "#FFF9C4"
 }
-lista_deps_fixa = ["Rede Global", "Cultural", "Portaria", "Estacionamento"]
 mapa_niveis_num = {k: i for i, k in enumerate(cores_niveis.keys())}
 
 dias_semana = {
@@ -77,7 +76,6 @@ st.markdown("""
     .stSelectbox label, .stMultiSelect label, .stDateInput label, .stPills label {
         font-size: 1.1rem !important; font-weight: bold !important;
     }
-    
     .card-container {
         padding: 15px; 
         border-radius: 12px 12px 0 0; 
@@ -101,7 +99,11 @@ if 'user' not in st.session_state: st.session_state.user = None
 
 sheet_ev, sheet_us, df_ev, df_us = load_data()
 
-# --- 5. ACESSO ---
+# --- 5. EXTRAÇÃO DE DEPARTAMENTOS DINÂMICOS ---
+# Extraímos aqui para usar tanto no Acesso/Cadastro quanto no Dashboard
+deps_na_planilha = sorted([d for d in df_ev['Departamento'].unique() if str(d).strip() != ""])
+
+# --- 6. ACESSO ---
 if st.session_state.user is None:
     st.title("🤝 Escala de Voluntários")
     with st.form("login"):
@@ -110,26 +112,32 @@ if st.session_state.user is None:
             u = df_us[df_us['Email'].astype(str).str.lower() == em]
             if not u.empty: st.session_state.user = u.iloc[0].to_dict(); st.rerun()
             else: st.session_state['novo_em'] = em
+            
     if 'novo_em' in st.session_state:
         with st.form("cad"):
             st.info("E-mail novo. Crie seu perfil:")
-            nc = st.text_input("Nome Crachá:"); tc = st.text_input("Telefone:")
-            dc = st.multiselect("Departamentos:", lista_deps_fixa); nv = st.selectbox("Nível:", list(cores_niveis.keys()))
-            if st.form_submit_button("Cadastrar"):
+            nc = st.text_input("Nome Crachá:")
+            tc = st.text_input("Telefone:")
+            # AGORA O CADASTRO TAMBÉM É DINÂMICO
+            dc = st.multiselect("Departamentos que atua:", options=deps_na_planilha)
+            nv = st.selectbox("Seu Nível Atual:", list(cores_niveis.keys()))
+            
+            if st.form_submit_button("Finalizar Cadastro"):
                 sheet_us.append_row([st.session_state['novo_em'], nc, tc, ",".join(dc), nv])
                 st.session_state.user = {"Email": st.session_state['novo_em'], "Nome": nc, "Telefone": tc, "Departamentos": ",".join(dc), "Nivel": nv}
-                st.cache_resource.clear(); st.rerun()
+                st.cache_resource.clear()
+                st.rerun()
     st.stop()
 
-# --- 6. DASHBOARD ---
+# --- 7. DASHBOARD ---
 user = st.session_state.user
 st.title(f"🤝 Olá, {user['Nome'].split()[0]}!")
 
 # Filtros Principais
 filtro_status = st.pills("Status:", ["Vagas Abertas", "Minhas Inscrições", "Tudo"], default="Vagas Abertas")
-f_depto_pill = st.pills("Departamento:", ["Todos"] + lista_deps_fixa, default="Todos")
+f_depto_pill = st.pills("Departamento:", ["Todos"] + deps_na_planilha, default="Todos")
 
-# Novos Filtros: Nível e Data
+# Filtros Secundários
 c1, c2 = st.columns(2)
 with c1:
     f_nivel = st.selectbox("Filtrar por Nível:", ["Todos"] + list(cores_niveis.keys()))
@@ -144,10 +152,10 @@ df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 # Aplicação dos Filtros
 df_f = df_ev.copy()
 
-# 1. Filtro de Segurança (Nível do Usuário)
+# 1. Trava de Nível (O usuário nunca vê o que está acima dele)
 df_f = df_f[df_f['Niv_N'] <= mapa_niveis_num.get(user['Nivel'], 0)]
 
-# 2. Filtro de Departamento
+# 2. Filtro de Departamento (Dinâmico)
 if f_depto_pill != "Todos":
     df_f = df_f[df_f['Departamento'] == f_depto_pill]
 
@@ -158,11 +166,11 @@ if filtro_status == "Minhas Inscrições":
 elif filtro_status == "Vagas Abertas":
     df_f = df_f[df_f.apply(lambda x: str(x['Voluntário 1']).strip() == "" or str(x['Voluntário 2']).strip() == "", axis=1)]
 
-# 4. Novo: Filtro de Nível (Drop Down)
+# 4. Filtro de Nível (Drop Down)
 if f_nivel != "Todos":
     df_f = df_f[df_f['Nível'].astype(str).str.strip() == f_nivel]
 
-# 5. Novo: Filtro de Data
+# 5. Filtro de Data
 df_f = df_f[df_f['Data_Dt'].dt.date >= f_data]
 
 # Renderização dos Cards
