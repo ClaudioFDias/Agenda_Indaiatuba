@@ -49,6 +49,12 @@ cores_niveis = {
 lista_deps_fixa = ["Rede Global", "Cultural", "Portaria", "Estacionamento"]
 mapa_niveis_num = {k: i for i, k in enumerate(cores_niveis.keys())}
 
+# Tradução dos dias da semana
+dias_semana = {
+    "Monday": "Seg", "Tuesday": "Ter", "Wednesday": "Qua", 
+    "Thursday": "Qui", "Friday": "Sex", "Saturday": "Sáb", "Sunday": "Dom"
+}
+
 # --- 3. DIALOGS ---
 @st.dialog("Confirmar Alteração de Dados")
 def confirmar_edicao_dialog(sheet, linha, novos_dados):
@@ -63,9 +69,10 @@ def confirmar_edicao_dialog(sheet, linha, novos_dados):
 
 @st.dialog("Confirmar Inscrição")
 def confirmar_dialog(sheet, linha, row, vaga_n, col_idx):
+    dia_pt = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
     st.markdown(f"### {row['Nível']} - {row['Nome do Evento']}")
     st.divider()
-    st.write(f"📅 **Data:** {row['Data_Dt'].strftime('%d/%m/%Y')}")
+    st.write(f"📅 **Data:** {row['Data_Dt'].strftime('%d/%m/%Y')} ({dia_pt})")
     st.write(f"⏰ **Horário:** {row['Horario']}")
     st.write(f"🏢 **Departamento:** {row['Departamento']}")
     st.write(f"👤 **Sua Vaga:** {vaga_n}")
@@ -79,29 +86,21 @@ st.set_page_config(page_title="ProVida Escala", layout="centered")
 
 st.markdown("""
     <style>
-    /* Fonte geral aumentada */
     html, body, [class*="st-at"], .stMarkdown p {
         font-size: 1.2rem !important;
     }
-    
-    /* Títulos de Filtros e Labels */
-    .stSelectbox label, .stMultiSelect label, .stDateInput label, div[data-baseweb="pill-button"] {
-        font-size: 1.3rem !important;
+    .stSelectbox label, .stMultiSelect label, .stDateInput label, div[data-baseweb="pill-button"], .stPills label {
+        font-size: 1.4rem !important;
         font-weight: bold !important;
     }
-
-    /* Botão de Entrar e botões principais maiores */
     div.stButton > button:first-child[kind="primary"] {
         font-size: 1.5rem !important;
         height: 4.5rem !important;
     }
-
-    /* Ajuste para as Pills (filtros clicáveis) ficarem maiores */
     button[data-baseweb="pill-button"] {
         padding: 10px 20px !important;
         height: auto !important;
     }
-    
     .stButton > button:disabled {
         background-color: #333333 !important;
         color: white !important;
@@ -129,7 +128,6 @@ if st.session_state.user is None:
                     st.session_state['edit_row'] = user_row.iloc[0].to_dict()
                     st.session_state['edit_idx'] = user_row.index[0] + 2
                 else: st.error("Não encontrado.")
-        
         if 'edit_row' in st.session_state:
             with st.form("edicao_final"):
                 dados = st.session_state['edit_row']
@@ -140,22 +138,17 @@ if st.session_state.user is None:
                 niv_e = st.selectbox("Nível:", niv_l, index=niv_l.index(dados['Nivel']) if dados['Nivel'] in niv_l else 0)
                 if st.form_submit_button("Salvar Alterações"):
                     confirmar_edicao_dialog(sheet_us, st.session_state['edit_idx'], [dados['Email'], n_e, t_e, ",".join(d_e), niv_e])
-        
         if st.button("Voltar"): 
-            st.session_state.modo_edicao = False; 
-            st.session_state.pop('edit_row', None); 
-            st.rerun()
+            st.session_state.modo_edicao = False; st.session_state.pop('edit_row', None); st.rerun()
     else:
         with st.form("login"):
             em = st.text_input("E-mail para entrar:").strip().lower()
             if st.form_submit_button("Entrar no Sistema", type="primary", width="stretch"):
                 u = df_us[df_us['Email'].astype(str).str.lower() == em]
                 if not u.empty: 
-                    st.session_state.user = u.iloc[0].to_dict()
-                    st.rerun()
+                    st.session_state.user = u.iloc[0].to_dict(); st.rerun()
                 else: 
                     st.session_state['novo_em'] = em
-        
         if 'novo_em' in st.session_state:
             with st.form("cad"):
                 st.info("E-mail novo. Crie seu perfil:")
@@ -173,15 +166,12 @@ if st.session_state.user is None:
 user = st.session_state.user
 st.title(f"🤝 Olá, {user['Nome'].split()[0]}!")
 
-# Filtros Padrão: Vagas Abertas
 st.markdown("### 🔍 Filtrar Vagas")
 filtro_status = st.pills("Status da Vaga:", ["Vagas Abertas", "Minhas Inscrições", "Tudo"], default="Vagas Abertas")
 
-# Departamentos como Pills
 st.markdown("### 🏢 Departamentos")
 f_depto_pill = st.pills("Selecione para filtrar:", ["Todos"] + lista_deps_fixa, default="Todos")
 
-# Opções de data e nível
 with st.expander("📅 Outros Filtros (Data e Nível)"):
     c1, c2 = st.columns(2)
     f_data = c1.date_input("A partir de:", datetime.now().date())
@@ -193,9 +183,7 @@ df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fi
 nivel_user_num = mapa_niveis_num.get(user['Nivel'], 0)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 
-# Filtro de Departamento
 dept_selecionados = lista_deps_fixa if f_depto_pill == "Todos" else [f_depto_pill]
-
 df_f = df_ev[(df_ev['Departamento'].isin(dept_selecionados)) & (df_ev['Niv_N'] <= nivel_user_num) & (df_ev['Data_Dt'].dt.date >= f_data)].copy()
 if f_nivel: df_f = df_f[df_f['Nível'].isin(f_nivel)]
 
@@ -213,14 +201,17 @@ for i, row in df_f.iterrows():
     tx = "#FFFFFF" if "AV2" in str(row['Nível']) else "#000000"
     st_vaga = "🟢 Completo" if v1 and v2 else ("🟡 1 Vaga" if v1 or v2 else "🔴 2 Vagas")
     ja_in = (v1.lower() == user['Nome'].lower() or v2.lower() == user['Nome'].lower())
+    
+    # Obtém o dia da semana abreviado
+    dia_abreviado = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
 
     st.markdown(f"""
         <div style="background-color: {bg}; padding: 20px; border-radius: 15px 15px 0 0; border: 1px solid #ddd; color: {tx}; margin-top: 25px;">
             <div style="display: flex; justify-content: space-between; font-weight: 800;">
                 <span style="font-size: 1.1em;">{st_vaga}</span>
-                <span style="font-size: 2em;">{row['Data_Dt'].strftime('%d/%m')}</span>
+                <span style="font-size: 1.8em; text-align: right;">{row['Data_Dt'].strftime('%d/%m')}<br><small style="font-size: 0.6em; opacity: 0.8;">{dia_abreviado}</small></span>
             </div>
-            <h2 style="margin: 12px 0; color: {tx}; border: none; font-size: 1.6em;">{row['Nível']} - {row['Nome do Evento']}</h2>
+            <h2 style="margin: 5px 0 12px 0; color: {tx}; border: none; font-size: 1.6em;">{row['Nível']} - {row['Nome do Evento']}</h2>
             <div style="font-weight: 700; margin-bottom: 8px; font-size: 1.2rem;">🏢 {row['Departamento']}</div>
             <div style="margin-bottom: 12px; font-size: 1.1rem;"><b>Horário:</b> {row['Horario']}</div>
             <div style="background: rgba(0,0,0,0.1); padding: 12px; border-radius: 10px;">
