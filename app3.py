@@ -29,7 +29,7 @@ def get_gspread_client():
     except Exception:
         st.error("Erro crítico de conexão."); st.stop()
 
-@st.cache_data(ttl=300) # Cache de 5 minutos
+@st.cache_data(ttl=300)
 def load_data_cached():
     client = get_gspread_client()
     for tentativa in range(3):
@@ -44,13 +44,9 @@ def load_data_cached():
             df_us = pd.DataFrame(data_us) if data_us else pd.DataFrame(columns=['Email', 'Nome', 'Telefone', 'Departamentos', 'Nivel'])
             df_us.columns = [c.strip() for c in df_us.columns]
             return df_ev, df_us
-        except gspread.exceptions.APIError:
-            if tentativa < 2:
-                time.sleep(2)
-                continue
-            else:
-                st.error("O Google Sheets está ocupado. Aguarde e atualize.")
-                st.stop()
+        except Exception:
+            if tentativa < 2: time.sleep(2); continue
+            else: st.error("Erro ao carregar dados."); st.stop()
 
 def get_sheets():
     client = get_gspread_client()
@@ -71,15 +67,13 @@ dias_semana = {"Monday": "Segunda", "Tuesday": "Terça", "Wednesday": "Quarta", 
 def conflito_dialog(evento_nome, horario):
     st.warning("⚠️ **Você já possui uma atividade neste horário!**")
     st.info(f"Evento conflitante: **{evento_nome}** às **{horario}**")
-    if st.button("Entendido", type="primary", width="stretch"):
-        st.rerun()
+    if st.button("Entendido", type="primary", use_container_width=True): st.rerun()
 
 @st.dialog("Confirmar Alteração de Cadastro")
 def confirmar_edicao_dialog(linha, novos_dados):
     st.markdown("### Verifique seus novos dados:")
     st.markdown(f"**Nome:** {novos_dados[1]}\n**Telefone:** {novos_dados[2]}\n**Nível:** {novos_dados[4]}\n**Departamentos:** {novos_dados[3]}")
-    st.info("Ao confirmar, o app será atualizado.")
-    if st.button("Confirmar e Salvar", type="primary", width="stretch"):
+    if st.button("Confirmar e Salvar", type="primary", use_container_width=True):
         _, sheet_us = get_sheets()
         sheet_us.update(f"A{linha}:E{linha}", [novos_dados])
         st.session_state.user = {"Email": novos_dados[0], "Nome": novos_dados[1], "Telefone": novos_dados[2], "Departamentos": novos_dados[3], "Nivel": novos_dados[4]}
@@ -92,32 +86,29 @@ def confirmar_dialog(linha, row, col_idx):
     st.markdown(f"### {row['Nível']} - {row['Nome do Evento']}")
     st.write(f"📅 **Data:** {dia_pt} - {row['Data_Dt'].strftime('%d/%m/%Y')}")
     st.write(f"⏰ **Horário:** {row['Horario']} | 🏢 **Depto:** {row['Departamento']}")
-    st.divider()
-    if st.button("Confirmar Inscrição", type="primary", width="stretch"):
+    if st.button("Confirmar Inscrição", type="primary", use_container_width=True):
         with st.spinner("Salvando..."):
             sheet_ev, _ = get_sheets()
             sheet_ev.update_cell(linha, col_idx, st.session_state.user['Nome'])
-            st.cache_data.clear()
-            st.rerun()
+            st.cache_data.clear(); st.rerun()
 
 # --- 4. STYLE ---
 st.set_page_config(page_title="ProVida Escala", layout="centered")
 st.markdown("""
     <style>
-    .card-container { padding: 15px; border-radius: 12px; border: 1px solid #ddd; margin-top: 10px; margin-bottom: 10px; background-color: #ffffff; }
-    .card-header { display: flex; justify-content: space-between; align-items: center; font-weight: 800; }
-    .card-title { margin: 5px 0; font-size: 1.2em; line-height: 1.2; font-weight: 700; color: #1565c0; }
-    .voluntarios-box { background: rgba(0,0,0,0.05); padding: 8px; border-radius: 8px; font-size: 0.95rem; margin-top: 5px; }
-    .data-text { font-size: 1.1em; font-weight: 800; }
+    .public-card { padding: 15px; border-radius: 12px; border: 1px solid #ddd; margin-bottom: 20px; background-color: #f8f9fa; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+    .public-title { color: #1565c0; font-size: 1.25em; font-weight: 800; border-bottom: 2px solid #1565c0; margin-bottom: 10px; padding-bottom: 5px; }
+    .depto-box { margin-top: 10px; padding: 10px; background: white; border-radius: 8px; border-left: 5px solid #444; }
+    .vol-filled { color: #2e7d32; font-weight: 600; }
+    .vol-empty { color: #d32f2f; font-weight: 600; font-style: italic; }
+    .card-container { padding: 15px; border-radius: 12px 12px 0 0; border: 1px solid #ddd; margin-top: 15px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZAÇÃO DE ESTADOS ---
 if 'user' not in st.session_state: st.session_state.user = None
 if 'modo_edicao' not in st.session_state: st.session_state.modo_edicao = False
 if 'ver_painel' not in st.session_state: st.session_state.ver_painel = False
 
-# Carregamento de Dados
 df_ev, df_us = load_data_cached()
 df_ev['Data_Dt'] = pd.to_datetime(df_ev['Data Específica'], errors='coerce', dayfirst=True)
 deps_na_planilha = sorted([d for d in df_ev['Departamento'].unique() if str(d).strip() != ""])
@@ -128,43 +119,48 @@ deps_na_planilha = sorted([d for d in df_ev['Departamento'].unique() if str(d).s
 if st.session_state.ver_painel:
     st.title("🏃‍♂️ Responsáveis do Dia")
     if st.button("⬅️ Voltar para Login"):
-        st.session_state.ver_painel = False
-        st.rerun()
+        st.session_state.ver_painel = False; st.rerun()
     
     data_sel = st.date_input("Filtrar por data:", value=date.today())
     df_dia = df_ev[df_ev['Data_Dt'].dt.date == data_sel].copy()
     
     if df_dia.empty:
-        st.warning(f"Nenhuma atividade encontrada para {data_sel.strftime('%d/%m/%Y')}.")
+        st.warning("Nenhuma atividade encontrada para esta data.")
     else:
-        deptos_dia = sorted(df_dia['Departamento'].unique())
-        for depto in deptos_dia:
-            with st.expander(f"🏢 {depto}", expanded=True):
-                evs = df_dia[df_dia['Departamento'] == depto].sort_values('Horario')
-                for _, row in evs.iterrows():
-                    v1 = str(row['Voluntário 1']).strip() or "Vaga Aberta"
-                    v2 = str(row['Voluntário 2']).strip() or "Vaga Aberta"
-                    st.markdown(f"""
-                        <div class="card-container">
-                            <div style="font-size: 0.85em; color: #666;">⏰ {row['Horario']} - {row['Nível']}</div>
-                            <div class="card-title">{row['Nome do Evento']}</div>
-                            <div class="voluntarios-box">
-                                👤 {v1}<br>👤 {v2}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
+        # Agrupar por Nível, Atividade e Horário
+        df_dia = df_dia.sort_values('Horario')
+        atividades = df_dia.groupby(['Nível', 'Nome do Evento', 'Horario'])
+        
+        for (nivel, nome_ev, horario), grupo in atividades:
+            # Renderizar o Card da Atividade
+            html_card = f'<div class="public-card"><div class="public-title">{nivel} - {nome_ev} - {horario}</div>'
+            
+            for _, row in grupo.iterrows():
+                v1 = str(row['Voluntário 1']).strip()
+                v2 = str(row['Voluntário 2']).strip()
+                
+                v1_display = f'<span class="vol-filled">🟢 {v1}</span>' if v1 and v1 not in ["---", "nan"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
+                v2_display = f'<span class="vol-filled">🟢 {v2}</span>' if v2 and v2 not in ["---", "nan"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
+                
+                html_card += f"""
+                <div class="depto-box">
+                    <b style="color: #444;">🏢 Departamento: {row['Departamento']}</b><br>
+                    <div style="margin-left: 15px; margin-top: 5px;">
+                        {v1_display}<br>
+                        {v2_display}
+                    </div>
+                </div>
+                """
+            html_card += "</div>"
+            st.markdown(html_card, unsafe_allow_html=True)
     st.stop()
 
-# B) ACESSO / LOGIN / EDIÇÃO
+# B) LOGIN / CADASTRO
 if st.session_state.user is None:
     st.title("🤝 Escala de Voluntários")
-    
-    # BOTÃO PARA ACESSO PÚBLICO
-    st.info("Quer saber quem está escalado hoje?")
-    if st.button("🔍 Ver Responsáveis (Sem Login)", use_container_width=True):
-        st.session_state.ver_painel = True
-        st.rerun()
-    
+    st.info("Acesso rápido:")
+    if st.button("🔍 Ver Responsáveis do Dia (Sem Login)", use_container_width=True):
+        st.session_state.ver_painel = True; st.rerun()
     st.divider()
 
     if st.session_state.modo_edicao:
@@ -197,7 +193,7 @@ if st.session_state.user is None:
                 else: st.session_state['novo_em'] = em
         if 'novo_em' in st.session_state:
             with st.form("cad"):
-                st.info("E-mail novo detectado! Complete seu cadastro:")
+                st.info("E-mail novo! Complete seu cadastro:")
                 nc = st.text_input("Nome Crachá:"); tc = st.text_input("Telefone:")
                 dc = st.multiselect("Departamentos:", options=deps_na_planilha)
                 nv = st.selectbox("Nível:", list(cores_niveis.keys()))
@@ -222,7 +218,7 @@ c1, c2 = st.columns(2)
 with c1: f_nivel = st.selectbox("Filtrar por Nível:", ["Todos"] + list(cores_niveis.keys()))
 with c2: f_data = st.date_input("A partir de:", value=date.today())
 
-# Processamento de Dados
+# Processamento
 df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fillna(99)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 
@@ -240,20 +236,20 @@ elif filtro_status == "Vagas Abertas":
 elif filtro_status == "Vagas Vazias":
     df_f = df_f[(df_f['Voluntário 1'].astype(str).str.strip() == "") & (df_f['Voluntário 2'].astype(str).str.strip() == "")]
 
-# Listagem
+# Listagem Dashboard
 for i, row in df_f.iterrows():
     v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
-    dia_abreviado = dias_semana.get(row['Data_Dt'].strftime('%A'), "")[:3]
+    dia_abr = dias_semana.get(row['Data_Dt'].strftime('%A'), "")[:3]
     bg = cores_niveis.get(str(row['Nível']).strip(), "#FFFFFF")
     tx = "#FFFFFF" if "AV2" in str(row['Nível']) else "#000000"
     st_vaga = "🟢 Cheio" if v1 and v2 else ("🟡 1 Vaga" if v1 or v2 else "🔴 2 Vagas")
 
     st.markdown(f"""
-        <div class="card-container" style="background-color: {bg}; color: {tx}; border-radius: 12px 12px 0 0; margin-top: 15px;">
-            <div class="card-header"><span style="opacity: 0.8;">{st_vaga}</span><span class="data-text">{dia_abreviado} - {row['Data_Dt'].strftime('%d/%m')}</span></div>
-            <h2 class="card-title" style="color: {tx};">{row['Nível']} - {row['Nome do Evento']}</h2>
+        <div class="card-container" style="background-color: {bg}; color: {tx};">
+            <div style="display: flex; justify-content: space-between; font-weight: 800;"><span>{st_vaga}</span><span>{dia_abr} - {row['Data_Dt'].strftime('%d/%m')}</span></div>
+            <h2 style="margin: 5px 0; font-size: 1.4em; color: {tx};">{row['Nível']} - {row['Nome do Evento']}</h2>
             <div style="font-weight: 800; margin-bottom: 10px;">🏢 {row['Departamento']} | ⏰ {row['Horario']}</div>
-            <div class="voluntarios-box"><b>Voluntário 1:</b> {v1 if v1 else "---"}<br><b>Voluntário 2:</b> {v2 if v2 else "---"}</div>
+            <div style="background: rgba(0,0,0,0.07); padding: 10px; border-radius: 8px;"><b>Vol. 1:</b> {v1 if v1 else "---"}<br><b>Vol. 2:</b> {v2 if v2 else "---"}</div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -269,5 +265,5 @@ for i, row in df_f.iterrows():
                 confirmar_dialog(int(row['index'])+2, row, c_alvo)
 
 st.divider()
-if st.button("🔄 Sincronizar Planilha"): st.cache_data.clear(); st.rerun()
+if st.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
 if st.button("Sair"): st.session_state.user = None; st.rerun()
