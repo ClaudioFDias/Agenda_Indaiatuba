@@ -66,7 +66,6 @@ dias_semana = {"Monday": "Segunda", "Tuesday": "Terça", "Wednesday": "Quarta", 
 @st.dialog("Conflito de Agenda")
 def conflito_dialog(evento_nome, horario):
     st.warning("⚠️ **Você já possui uma atividade neste horário!**")
-    st.info(f"Evento conflitante: **{evento_nome}** às **{horario}**")
     if st.button("Entendido", type="primary", use_container_width=True): st.rerun()
 
 @st.dialog("Confirmar Alteração de Cadastro")
@@ -82,10 +81,6 @@ def confirmar_edicao_dialog(linha, novos_dados):
 
 @st.dialog("Confirmar Inscrição")
 def confirmar_dialog(linha, row, col_idx):
-    dia_pt = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
-    st.markdown(f"### {row['Nível']} - {row['Nome do Evento']}")
-    st.write(f"📅 **Data:** {dia_pt} - {row['Data_Dt'].strftime('%d/%m/%Y')}")
-    st.write(f"⏰ **Horário:** {row['Horario']} | 🏢 **Depto:** {row['Departamento']}")
     if st.button("Confirmar Inscrição", type="primary", use_container_width=True):
         with st.spinner("Salvando..."):
             sheet_ev, _ = get_sheets()
@@ -116,40 +111,23 @@ deps_na_planilha = sorted([d for d in df_ev['Departamento'].unique() if str(d).s
 
 # --- 5. FLUXO DE TELAS ---
 
-# A) PAINEL PÚBLICO (SEM LOGIN)
+# A) PAINEL PÚBLICO
 if st.session_state.ver_painel:
     st.title("🏃‍♂️ Responsáveis do Dia")
-    if st.button("⬅️ Voltar para Login"):
-        st.session_state.ver_painel = False; st.rerun()
-    
+    if st.button("⬅️ Voltar"): st.session_state.ver_painel = False; st.rerun()
     data_sel = st.date_input("Filtrar data:", value=date.today())
     df_dia = df_ev[df_ev['Data_Dt'].dt.date == data_sel].copy()
-    
-    if df_dia.empty:
-        st.warning("Nenhuma atividade encontrada.")
+    if df_dia.empty: st.warning("Nenhuma atividade encontrada.")
     else:
-        df_dia = df_dia.sort_values(['Horario', 'Nível'])
-        atividades = df_dia.groupby(['Nível', 'Nome do Evento', 'Horario'])
-        
-        for (nivel, nome_ev, horario), grupo in atividades:
+        for (nivel, nome_ev, horario), grupo in df_dia.sort_values(['Horario', 'Nível']).groupby(['Nível', 'Nome do Evento', 'Horario']):
             bg_c = cores_niveis.get(str(nivel).strip(), "#f8f9fa")
             tx_c = "#FFFFFF" if "AV2" in str(nivel) else "#000000"
-            
-            html_parts = []
-            html_parts.append(f'<div class="public-card" style="background-color: {bg_c}; color: {tx_c};">')
-            html_parts.append(f'<div class="public-title" style="border-color: {tx_c}44;">{nivel} - {nome_ev} - {horario}</div>')
-            
+            html_parts = [f'<div class="public-card" style="background-color: {bg_c}; color: {tx_c};">', f'<div class="public-title" style="border-color: {tx_c}44;">{nivel} - {nome_ev} - {horario}</div>']
             for _, row in grupo.iterrows():
-                v1 = str(row['Voluntário 1']).strip()
-                v2 = str(row['Voluntário 2']).strip()
+                v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
                 v1_st = f'<span class="vol-filled">🟢 {v1}</span>' if v1 and v1 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
                 v2_st = f'<span class="vol-filled">🟢 {v2}</span>' if v2 and v2 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
-                
-                html_parts.append('<div class="depto-box">')
-                html_parts.append(f'<b>🏢 {row["Departamento"]}</b>')
-                html_parts.append(f'<div class="vol-status">{v1_st}{v2_st}</div>')
-                html_parts.append('</div>')
-            
+                html_parts.append(f'<div class="depto-box"><b>🏢 {row["Departamento"]}</b><div class="vol-status">{v1_st}{v2_st}</div></div>')
             html_parts.append('</div>')
             st.markdown("".join(html_parts), unsafe_allow_html=True)
     st.stop()
@@ -168,6 +146,8 @@ if st.session_state.user is None:
             if st.form_submit_button("Buscar Cadastro", type="primary", use_container_width=True):
                 user_row = df_us[df_us['Email'].astype(str).str.lower() == email_b]
                 if not user_row.empty: 
+                    # Limpamos a session state antes de carregar o novo
+                    if 'edit_row' in st.session_state: del st.session_state['edit_row']
                     st.session_state['edit_row'] = user_row.iloc[0].to_dict()
                     st.session_state['edit_idx'] = user_row.index[0] + 2
                 else: st.error("E-mail não encontrado.")
@@ -176,21 +156,31 @@ if st.session_state.user is None:
             with st.form("edicao_final"):
                 dados = st.session_state['edit_row']
                 
-                # --- CORREÇÃO DO BUG DO MULTISELECT ---
-                deps_atuais = [d.strip() for d in str(dados.get('Departamentos', '')).split(",") if d.strip()]
-                deps_validos = [d for d in deps_atuais if d in deps_na_planilha]
+                # --- LÓGICA DE PRE-SELEÇÃO REFORÇADA ---
+                # 1. Pegamos o que está na planilha e transformamos em lista
+                deps_raw = str(dados.get('Departamentos', ''))
+                # 2. Quebramos por vírgula, limpamos espaços e removemos lixo (nan, None)
+                deps_usuario_lista = [d.strip() for d in deps_raw.split(",") if d.strip() and d.lower() not in ['nan', 'none']]
+                # 3. Filtramos para garantir que o departamento realmente exista na lista de opções
+                deps_default = [d for d in deps_usuario_lista if d in deps_na_planilha]
                 
                 n_e = st.text_input("Nome Crachá:", value=dados['Nome'])
                 t_e = st.text_input("Telefone:", value=dados['Telefone'])
-                d_e = st.multiselect("Seus Departamentos:", options=deps_na_planilha, default=deps_validos)
+                
+                # Usamos a lista limpa no default
+                d_e = st.multiselect("Seus Departamentos:", options=deps_na_planilha, default=deps_default)
                 
                 niv_l = list(cores_niveis.keys())
                 niv_atual = str(dados.get('Nivel', 'BAS')).strip()
-                niv_e = st.selectbox("Nível:", niv_l, index=niv_l.index(niv_atual) if niv_atual in niv_l else 0)
+                niv_idx = niv_l.index(niv_atual) if niv_atual in niv_l else 0
+                niv_e = st.selectbox("Nível:", niv_l, index=niv_idx)
                 
                 if st.form_submit_button("Salvar Alterações", type="primary", use_container_width=True):
                     confirmar_edicao_dialog(st.session_state['edit_idx'], [dados['Email'], n_e, t_e, ",".join(d_e), niv_e])
-        if st.button("Voltar"): st.session_state.modo_edicao = False; st.rerun()
+        
+        if st.button("Voltar"): 
+            if 'edit_row' in st.session_state: del st.session_state['edit_row']
+            st.session_state.modo_edicao = False; st.rerun()
     else:
         with st.form("login"):
             em = st.text_input("E-mail para entrar:").strip().lower()
@@ -215,7 +205,7 @@ if st.session_state.user is None:
 
 # --- 6. DASHBOARD (LOGADO) ---
 user = st.session_state.user
-meus_deps = [d.strip() for d in str(user['Departamentos']).split(",") if d.strip() != ""]
+meus_deps = [d.strip() for d in str(user['Departamentos']).split(",") if d.strip() and d.lower() not in ['nan', 'none']]
 st.title(f"🤝 Olá, {user['Nome'].split()[0]}!")
 
 filtro_status = st.pills("Status:", ["Vagas Abertas", "Vagas Vazias", "Minhas Inscrições", "Tudo"], default="Vagas Abertas")
@@ -227,7 +217,6 @@ with c2: f_data = st.date_input("A partir de:", value=date.today())
 
 df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fillna(99)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
-
 df_f = df_ev[df_ev['Departamento'].isin(meus_deps)].copy()
 df_f = df_f[(df_f['Niv_N'] <= mapa_niveis_num.get(user['Nivel'], 0)) & (df_f['Data_Dt'].dt.date >= f_data)]
 
@@ -248,26 +237,14 @@ for i, row in df_f.iterrows():
     bg = cores_niveis.get(str(row['Nível']).strip(), "#FFFFFF")
     tx = "#FFFFFF" if "AV2" in str(row['Nível']) else "#000000"
     st_vaga = "🟢 Cheio" if v1 and v2 else ("🟡 1 Vaga" if v1 or v2 else "🔴 2 Vagas")
-
-    st.markdown(f"""
-        <div class="card-container" style="background-color: {bg}; color: {tx};">
-            <div style="display: flex; justify-content: space-between; font-weight: 800;"><span>{st_vaga}</span><span>{dia_abr} - {row['Data_Dt'].strftime('%d/%m')}</span></div>
-            <h2 style="margin: 5px 0; font-size: 1.4em; color: {tx};">{row['Nível']} - {row['Nome do Evento']}</h2>
-            <div style="font-weight: 800; margin-bottom: 10px;">🏢 {row['Departamento']} | ⏰ {row['Horario']}</div>
-            <div style="background: rgba(0,0,0,0.07); padding: 10px; border-radius: 8px;"><b>Vol. 1:</b> {v1 if v1 else "---"}<br><b>Vol. 2:</b> {v2 if v2 else "---"}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    ja_in = (v1.lower() == nome_u_comp or v2.lower() == nome_u_comp)
-    if ja_in: st.button("✅ INSCRITO", key=f"bi_{i}", disabled=True, use_container_width=True)
+    st.markdown(f'<div class="card-container" style="background-color: {bg}; color: {tx};"><div style="display: flex; justify-content: space-between; font-weight: 800;"><span>{st_vaga}</span><span>{dia_abr} - {row["Data_Dt"].strftime("%d/%m")}</span></div><h2 style="margin: 5px 0; font-size: 1.4em; color: {tx};">{row["Nível"]} - {row["Nome do Evento"]}</h2><div style="font-weight: 800; margin-bottom: 10px;">🏢 {row["Departamento"]} | ⏰ {row["Horario"]}</div><div style="background: rgba(0,0,0,0.07); padding: 10px; border-radius: 8px;"><b>Vol. 1:</b> {v1 if v1 else "---"}<br><b>Vol. 2:</b> {v2 if v2 else "---"}</div></div>', unsafe_allow_html=True)
+    if (v1.lower() == nome_u_comp or v2.lower() == nome_u_comp): st.button("✅ INSCRITO", key=f"bi_{i}", disabled=True, use_container_width=True)
     elif v1 and v2: st.button("🚫 CHEIO", key=f"bf_{i}", disabled=True, use_container_width=True)
     else:
         if st.button("Quero me inscrever", key=f"bq_{i}", type="primary", use_container_width=True):
             conflito = df_ev[(df_ev['Data Específica'] == row['Data Específica']) & (df_ev['Horario'] == row['Horario']) & ((df_ev['Voluntário 1'].astype(str).str.lower().str.strip() == nome_u_comp) | (df_ev['Voluntário 2'].astype(str).str.lower().str.strip() == nome_u_comp))]
             if not conflito.empty: conflito_dialog(conflito.iloc[0]['Nome do Evento'], conflito.iloc[0]['Horario'])
-            else:
-                v_alvo, c_alvo = ("Voluntário 1", 8) if v1 == "" else ("Voluntário 2", 9)
-                confirmar_dialog(int(row['index'])+2, row, c_alvo)
+            else: confirmar_dialog(int(row['index'])+2, row, 8 if v1 == "" else 9)
 
 st.divider()
 if st.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
