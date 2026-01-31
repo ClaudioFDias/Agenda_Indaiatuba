@@ -96,11 +96,11 @@ def confirmar_dialog(linha, row, col_idx):
 st.set_page_config(page_title="ProVida Escala", layout="centered")
 st.markdown("""
     <style>
-    .public-card { padding: 15px; border-radius: 12px; border: 1px solid #ddd; margin-bottom: 20px; background-color: #f8f9fa; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+    .public-card { padding: 15px; border-radius: 12px; border: 1px solid #ddd; margin-bottom: 20px; background-color: #f8f9fa; }
     .public-title { color: #1565c0; font-size: 1.25em; font-weight: 800; border-bottom: 2px solid #1565c0; margin-bottom: 10px; padding-bottom: 5px; }
-    .depto-box { margin-top: 10px; padding: 10px; background: white; border-radius: 8px; border-left: 5px solid #444; }
-    .vol-filled { color: #2e7d32; font-weight: 600; }
-    .vol-empty { color: #d32f2f; font-weight: 600; font-style: italic; }
+    .depto-box { margin-top: 10px; padding: 10px; background: white; border-radius: 8px; border-left: 5px solid #1565c0; }
+    .vol-filled { color: #2e7d32; font-weight: 600; display: block; margin-bottom: 2px; }
+    .vol-empty { color: #d32f2f; font-weight: 600; font-style: italic; display: block; margin-bottom: 2px; }
     .card-container { padding: 15px; border-radius: 12px 12px 0 0; border: 1px solid #ddd; margin-top: 15px; }
     </style>
 """, unsafe_allow_html=True)
@@ -128,31 +128,30 @@ if st.session_state.ver_painel:
         st.warning("Nenhuma atividade encontrada para esta data.")
     else:
         # Agrupar por Nível, Atividade e Horário
-        df_dia = df_dia.sort_values('Horario')
+        df_dia = df_dia.sort_values(['Horario', 'Nível'])
         atividades = df_dia.groupby(['Nível', 'Nome do Evento', 'Horario'])
         
         for (nivel, nome_ev, horario), grupo in atividades:
-            # Renderizar o Card da Atividade
-            html_card = f'<div class="public-card"><div class="public-title">{nivel} - {nome_ev} - {horario}</div>'
+            # Construímos o HTML de forma limpa sem tabs no início das linhas
+            html_parts = []
+            html_parts.append('<div class="public-card">')
+            html_parts.append(f'<div class="public-title">{nivel} - {nome_ev} - {horario}</div>')
             
             for _, row in grupo.iterrows():
                 v1 = str(row['Voluntário 1']).strip()
                 v2 = str(row['Voluntário 2']).strip()
                 
-                v1_display = f'<span class="vol-filled">🟢 {v1}</span>' if v1 and v1 not in ["---", "nan"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
-                v2_display = f'<span class="vol-filled">🟢 {v2}</span>' if v2 and v2 not in ["---", "nan"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
+                # Validação de nome preenchido
+                v1_status = f'<span class="vol-filled">🟢 {v1}</span>' if v1 and v1 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
+                v2_status = f'<span class="vol-filled">🟢 {v2}</span>' if v2 and v2 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
                 
-                html_card += f"""
-                <div class="depto-box">
-                    <b style="color: #444;">🏢 Departamento: {row['Departamento']}</b><br>
-                    <div style="margin-left: 15px; margin-top: 5px;">
-                        {v1_display}<br>
-                        {v2_display}
-                    </div>
-                </div>
-                """
-            html_card += "</div>"
-            st.markdown(html_card, unsafe_allow_html=True)
+                html_parts.append('<div class="depto-box">')
+                html_parts.append(f'<b>🏢 Departamento: {row["Departamento"]}</b><br>')
+                html_parts.append(f'<div style="margin-left: 10px; margin-top: 5px;">{v1_status}{v2_status}</div>')
+                html_parts.append('</div>')
+            
+            html_parts.append('</div>')
+            st.markdown("".join(html_parts), unsafe_allow_html=True)
     st.stop()
 
 # B) LOGIN / CADASTRO
