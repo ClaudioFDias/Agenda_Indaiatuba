@@ -96,11 +96,12 @@ def confirmar_dialog(linha, row, col_idx):
 st.set_page_config(page_title="ProVida Escala", layout="centered")
 st.markdown("""
     <style>
-    .public-card { padding: 15px; border-radius: 12px; border: 1px solid #ddd; margin-bottom: 20px; background-color: #f8f9fa; }
-    .public-title { color: #1565c0; font-size: 1.25em; font-weight: 800; border-bottom: 2px solid #1565c0; margin-bottom: 10px; padding-bottom: 5px; }
-    .depto-box { margin-top: 10px; padding: 10px; background: white; border-radius: 8px; border-left: 5px solid #1565c0; }
-    .vol-filled { color: #2e7d32; font-weight: 600; display: block; margin-bottom: 2px; }
-    .vol-empty { color: #d32f2f; font-weight: 600; font-style: italic; display: block; margin-bottom: 2px; }
+    .public-card { padding: 15px; border-radius: 12px; border: 1px solid #ccc; margin-bottom: 20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1); }
+    .public-title { font-size: 1.2em; font-weight: 800; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid rgba(0,0,0,0.1); }
+    .depto-box { margin-top: 8px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 8px; color: #333; }
+    .vol-status { display: block; margin-top: 3px; font-size: 0.95em; }
+    .vol-filled { color: #1b5e20; font-weight: 700; }
+    .vol-empty { color: #b71c1c; font-weight: 700; font-style: italic; }
     .card-container { padding: 15px; border-radius: 12px 12px 0 0; border: 1px solid #ddd; margin-top: 15px; }
     </style>
 """, unsafe_allow_html=True)
@@ -121,33 +122,35 @@ if st.session_state.ver_painel:
     if st.button("⬅️ Voltar para Login"):
         st.session_state.ver_painel = False; st.rerun()
     
-    data_sel = st.date_input("Filtrar por data:", value=date.today())
+    data_sel = st.date_input("Filtrar data:", value=date.today())
     df_dia = df_ev[df_ev['Data_Dt'].dt.date == data_sel].copy()
     
     if df_dia.empty:
-        st.warning("Nenhuma atividade encontrada para esta data.")
+        st.warning("Nenhuma atividade encontrada.")
     else:
-        # Agrupar por Nível, Atividade e Horário
         df_dia = df_dia.sort_values(['Horario', 'Nível'])
         atividades = df_dia.groupby(['Nível', 'Nome do Evento', 'Horario'])
         
         for (nivel, nome_ev, horario), grupo in atividades:
-            # Construímos o HTML de forma limpa sem tabs no início das linhas
+            # Puxa a cor do dicionário
+            bg_color = cores_niveis.get(str(nivel).strip(), "#f8f9fa")
+            # Define cor do texto (branco para AV2, preto para o resto)
+            text_color = "#FFFFFF" if "AV2" in str(nivel) else "#000000"
+            
             html_parts = []
-            html_parts.append('<div class="public-card">')
-            html_parts.append(f'<div class="public-title">{nivel} - {nome_ev} - {horario}</div>')
+            html_parts.append(f'<div class="public-card" style="background-color: {bg_color}; color: {text_color};">')
+            html_parts.append(f'<div class="public-title" style="border-color: {text_color}44;">{nivel} - {nome_ev} - {horario}</div>')
             
             for _, row in grupo.iterrows():
                 v1 = str(row['Voluntário 1']).strip()
                 v2 = str(row['Voluntário 2']).strip()
                 
-                # Validação de nome preenchido
-                v1_status = f'<span class="vol-filled">🟢 {v1}</span>' if v1 and v1 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
-                v2_status = f'<span class="vol-filled">🟢 {v2}</span>' if v2 and v2 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
+                v1_st = f'<span class="vol-filled">🟢 {v1}</span>' if v1 and v1 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
+                v2_st = f'<span class="vol-filled">🟢 {v2}</span>' if v2 and v2 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
                 
                 html_parts.append('<div class="depto-box">')
-                html_parts.append(f'<b>🏢 Departamento: {row["Departamento"]}</b><br>')
-                html_parts.append(f'<div style="margin-left: 10px; margin-top: 5px;">{v1_status}{v2_status}</div>')
+                html_parts.append(f'<b style="color: #111;">🏢 {row["Departamento"]}</b>')
+                html_parts.append(f'<div class="vol-status">{v1_st}{v2_st}</div>')
                 html_parts.append('</div>')
             
             html_parts.append('</div>')
@@ -157,8 +160,7 @@ if st.session_state.ver_painel:
 # B) LOGIN / CADASTRO
 if st.session_state.user is None:
     st.title("🤝 Escala de Voluntários")
-    st.info("Acesso rápido:")
-    if st.button("🔍 Ver Responsáveis do Dia (Sem Login)", use_container_width=True):
+    if st.button("🔍 Ver Responsáveis do Dia (Público)", use_container_width=True):
         st.session_state.ver_painel = True; st.rerun()
     st.divider()
 
@@ -180,7 +182,7 @@ if st.session_state.user is None:
                 d_e = st.multiselect("Seus Departamentos:", options=deps_na_planilha, default=[d.strip() for d in str(dados['Departamentos']).split(",") if d.strip() in deps_na_planilha])
                 niv_l = list(cores_niveis.keys())
                 niv_e = st.selectbox("Nível:", niv_l, index=niv_l.index(dados['Nivel']) if dados['Nivel'] in niv_l else 0)
-                if st.form_submit_button("Revisar Alterações", type="primary", use_container_width=True):
+                if st.form_submit_button("Salvar Alterações", type="primary", use_container_width=True):
                     confirmar_edicao_dialog(st.session_state['edit_idx'], [dados['Email'], n_e, t_e, ",".join(d_e), niv_e])
         if st.button("Voltar"): st.session_state.modo_edicao = False; st.rerun()
     else:
@@ -217,7 +219,6 @@ c1, c2 = st.columns(2)
 with c1: f_nivel = st.selectbox("Filtrar por Nível:", ["Todos"] + list(cores_niveis.keys()))
 with c2: f_data = st.date_input("A partir de:", value=date.today())
 
-# Processamento
 df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fillna(99)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 
@@ -235,7 +236,6 @@ elif filtro_status == "Vagas Abertas":
 elif filtro_status == "Vagas Vazias":
     df_f = df_f[(df_f['Voluntário 1'].astype(str).str.strip() == "") & (df_f['Voluntário 2'].astype(str).str.strip() == "")]
 
-# Listagem Dashboard
 for i, row in df_f.iterrows():
     v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
     dia_abr = dias_semana.get(row['Data_Dt'].strftime('%A'), "")[:3]
