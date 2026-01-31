@@ -97,8 +97,8 @@ st.set_page_config(page_title="ProVida Escala", layout="centered")
 st.markdown("""
     <style>
     .public-card { padding: 15px; border-radius: 12px; border: 1px solid #ccc; margin-bottom: 20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1); }
-    .public-title { font-size: 1.2em; font-weight: 800; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid rgba(0,0,0,0.1); }
-    .depto-box { margin-top: 8px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 8px; color: #333; }
+    .public-title { font-size: 1.15em; font-weight: 800; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid rgba(0,0,0,0.1); }
+    .depto-box { margin-top: 8px; padding: 10px; background: rgba(255,255,255,0.75); border-radius: 8px; color: #111; }
     .vol-status { display: block; margin-top: 3px; font-size: 0.95em; }
     .vol-filled { color: #1b5e20; font-weight: 700; }
     .vol-empty { color: #b71c1c; font-weight: 700; font-style: italic; }
@@ -132,24 +132,21 @@ if st.session_state.ver_painel:
         atividades = df_dia.groupby(['Nível', 'Nome do Evento', 'Horario'])
         
         for (nivel, nome_ev, horario), grupo in atividades:
-            # Puxa a cor do dicionário
-            bg_color = cores_niveis.get(str(nivel).strip(), "#f8f9fa")
-            # Define cor do texto (branco para AV2, preto para o resto)
-            text_color = "#FFFFFF" if "AV2" in str(nivel) else "#000000"
+            bg_c = cores_niveis.get(str(nivel).strip(), "#f8f9fa")
+            tx_c = "#FFFFFF" if "AV2" in str(nivel) else "#000000"
             
             html_parts = []
-            html_parts.append(f'<div class="public-card" style="background-color: {bg_color}; color: {text_color};">')
-            html_parts.append(f'<div class="public-title" style="border-color: {text_color}44;">{nivel} - {nome_ev} - {horario}</div>')
+            html_parts.append(f'<div class="public-card" style="background-color: {bg_c}; color: {tx_c};">')
+            html_parts.append(f'<div class="public-title" style="border-color: {tx_c}44;">{nivel} - {nome_ev} - {horario}</div>')
             
             for _, row in grupo.iterrows():
                 v1 = str(row['Voluntário 1']).strip()
                 v2 = str(row['Voluntário 2']).strip()
-                
                 v1_st = f'<span class="vol-filled">🟢 {v1}</span>' if v1 and v1 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
                 v2_st = f'<span class="vol-filled">🟢 {v2}</span>' if v2 and v2 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
                 
                 html_parts.append('<div class="depto-box">')
-                html_parts.append(f'<b style="color: #111;">🏢 {row["Departamento"]}</b>')
+                html_parts.append(f'<b>🏢 {row["Departamento"]}</b>')
                 html_parts.append(f'<div class="vol-status">{v1_st}{v2_st}</div>')
                 html_parts.append('</div>')
             
@@ -164,48 +161,35 @@ if st.session_state.user is None:
         st.session_state.ver_painel = True; st.rerun()
     st.divider()
 
-# --- 5. FLUXO DE TELAS (Trecho corrigido da Edição) ---
-
-# ... dentro da parte de Login / Cadastro ...
-if st.session_state.modo_edicao:
-    st.subheader("📝 Alterar Meus Dados")
-    with st.form("busca_edicao"):
-        email_b = st.text_input("E-mail cadastrado:").strip().lower()
-        if st.form_submit_button("Buscar Cadastro", type="primary", use_container_width=True):
-            user_row = df_us[df_us['Email'].astype(str).str.lower() == email_b]
-            if not user_row.empty: 
-                st.session_state['edit_row'] = user_row.iloc[0].to_dict()
-                st.session_state['edit_idx'] = user_row.index[0] + 2
-            else: st.error("E-mail não encontrado.")
-            
-    if 'edit_row' in st.session_state:
-        with st.form("edicao_final"):
-            dados = st.session_state['edit_row']
-            
-            # --- CORREÇÃO AQUI: Limpeza rigorosa dos Departamentos ---
-            # 1. Pegamos a string da planilha e limpamos espaços
-            deps_usuario_str = str(dados.get('Departamentos', ''))
-            # 2. Convertemos em lista removendo espaços de cada item e filtrando vazios
-            lista_deps_usuario = [d.strip() for d in deps_usuario_str.split(",") if d.strip()]
-            # 3. Garantimos que só selecionamos itens que realmente existem nas opções atuais
-            deps_pre_selecionados = [d for d in lista_deps_usuario if d in deps_na_planilha]
-            
-            n_e = st.text_input("Nome Crachá:", value=dados['Nome'])
-            t_e = st.text_input("Telefone:", value=dados['Telefone'])
-            
-            # O multiselect agora usa a lista filtrada
-            d_e = st.multiselect(
-                "Seus Departamentos:", 
-                options=deps_na_planilha, 
-                default=deps_pre_selecionados
-            )
-            
-            niv_l = list(cores_niveis.keys())
-            nivel_atual = str(dados.get('Nivel', 'BAS')).strip()
-            niv_e = st.selectbox("Nível:", niv_l, index=niv_l.index(nivel_atual) if nivel_atual in niv_l else 0)
-            
-            if st.form_submit_button("Revisar Alterações", type="primary", use_container_width=True):
-                confirmar_edicao_dialog(st.session_state['edit_idx'], [dados['Email'], n_e, t_e, ",".join(d_e), niv_e])
+    if st.session_state.modo_edicao:
+        st.subheader("📝 Alterar Meus Dados")
+        with st.form("busca_edicao"):
+            email_b = st.text_input("E-mail cadastrado:").strip().lower()
+            if st.form_submit_button("Buscar Cadastro", type="primary", use_container_width=True):
+                user_row = df_us[df_us['Email'].astype(str).str.lower() == email_b]
+                if not user_row.empty: 
+                    st.session_state['edit_row'] = user_row.iloc[0].to_dict()
+                    st.session_state['edit_idx'] = user_row.index[0] + 2
+                else: st.error("E-mail não encontrado.")
+        
+        if 'edit_row' in st.session_state:
+            with st.form("edicao_final"):
+                dados = st.session_state['edit_row']
+                
+                # --- CORREÇÃO DO BUG DO MULTISELECT ---
+                deps_atuais = [d.strip() for d in str(dados.get('Departamentos', '')).split(",") if d.strip()]
+                deps_validos = [d for d in deps_atuais if d in deps_na_planilha]
+                
+                n_e = st.text_input("Nome Crachá:", value=dados['Nome'])
+                t_e = st.text_input("Telefone:", value=dados['Telefone'])
+                d_e = st.multiselect("Seus Departamentos:", options=deps_na_planilha, default=deps_validos)
+                
+                niv_l = list(cores_niveis.keys())
+                niv_atual = str(dados.get('Nivel', 'BAS')).strip()
+                niv_e = st.selectbox("Nível:", niv_l, index=niv_l.index(niv_atual) if niv_atual in niv_l else 0)
+                
+                if st.form_submit_button("Salvar Alterações", type="primary", use_container_width=True):
+                    confirmar_edicao_dialog(st.session_state['edit_idx'], [dados['Email'], n_e, t_e, ",".join(d_e), niv_e])
         if st.button("Voltar"): st.session_state.modo_edicao = False; st.rerun()
     else:
         with st.form("login"):
