@@ -164,26 +164,48 @@ if st.session_state.user is None:
         st.session_state.ver_painel = True; st.rerun()
     st.divider()
 
-    if st.session_state.modo_edicao:
-        st.subheader("📝 Alterar Meus Dados")
-        with st.form("busca_edicao"):
-            email_b = st.text_input("E-mail cadastrado:").strip().lower()
-            if st.form_submit_button("Buscar Cadastro", type="primary", use_container_width=True):
-                user_row = df_us[df_us['Email'].astype(str).str.lower() == email_b]
-                if not user_row.empty: 
-                    st.session_state['edit_row'] = user_row.iloc[0].to_dict()
-                    st.session_state['edit_idx'] = user_row.index[0] + 2
-                else: st.error("E-mail não encontrado.")
-        if 'edit_row' in st.session_state:
-            with st.form("edicao_final"):
-                dados = st.session_state['edit_row']
-                n_e = st.text_input("Nome Crachá:", value=dados['Nome'])
-                t_e = st.text_input("Telefone:", value=dados['Telefone'])
-                d_e = st.multiselect("Seus Departamentos:", options=deps_na_planilha, default=[d.strip() for d in str(dados['Departamentos']).split(",") if d.strip() in deps_na_planilha])
-                niv_l = list(cores_niveis.keys())
-                niv_e = st.selectbox("Nível:", niv_l, index=niv_l.index(dados['Nivel']) if dados['Nivel'] in niv_l else 0)
-                if st.form_submit_button("Salvar Alterações", type="primary", use_container_width=True):
-                    confirmar_edicao_dialog(st.session_state['edit_idx'], [dados['Email'], n_e, t_e, ",".join(d_e), niv_e])
+# --- 5. FLUXO DE TELAS (Trecho corrigido da Edição) ---
+
+# ... dentro da parte de Login / Cadastro ...
+if st.session_state.modo_edicao:
+    st.subheader("📝 Alterar Meus Dados")
+    with st.form("busca_edicao"):
+        email_b = st.text_input("E-mail cadastrado:").strip().lower()
+        if st.form_submit_button("Buscar Cadastro", type="primary", use_container_width=True):
+            user_row = df_us[df_us['Email'].astype(str).str.lower() == email_b]
+            if not user_row.empty: 
+                st.session_state['edit_row'] = user_row.iloc[0].to_dict()
+                st.session_state['edit_idx'] = user_row.index[0] + 2
+            else: st.error("E-mail não encontrado.")
+            
+    if 'edit_row' in st.session_state:
+        with st.form("edicao_final"):
+            dados = st.session_state['edit_row']
+            
+            # --- CORREÇÃO AQUI: Limpeza rigorosa dos Departamentos ---
+            # 1. Pegamos a string da planilha e limpamos espaços
+            deps_usuario_str = str(dados.get('Departamentos', ''))
+            # 2. Convertemos em lista removendo espaços de cada item e filtrando vazios
+            lista_deps_usuario = [d.strip() for d in deps_usuario_str.split(",") if d.strip()]
+            # 3. Garantimos que só selecionamos itens que realmente existem nas opções atuais
+            deps_pre_selecionados = [d for d in lista_deps_usuario if d in deps_na_planilha]
+            
+            n_e = st.text_input("Nome Crachá:", value=dados['Nome'])
+            t_e = st.text_input("Telefone:", value=dados['Telefone'])
+            
+            # O multiselect agora usa a lista filtrada
+            d_e = st.multiselect(
+                "Seus Departamentos:", 
+                options=deps_na_planilha, 
+                default=deps_pre_selecionados
+            )
+            
+            niv_l = list(cores_niveis.keys())
+            nivel_atual = str(dados.get('Nivel', 'BAS')).strip()
+            niv_e = st.selectbox("Nível:", niv_l, index=niv_l.index(nivel_atual) if nivel_atual in niv_l else 0)
+            
+            if st.form_submit_button("Revisar Alterações", type="primary", use_container_width=True):
+                confirmar_edicao_dialog(st.session_state['edit_idx'], [dados['Email'], n_e, t_e, ",".join(d_e), niv_e])
         if st.button("Voltar"): st.session_state.modo_edicao = False; st.rerun()
     else:
         with st.form("login"):
