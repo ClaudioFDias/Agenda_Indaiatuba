@@ -104,7 +104,7 @@ st.markdown("""
     <style>
     .card-container { padding: 15px; border-radius: 12px; border: 1px solid #ddd; margin-bottom: 10px; }
     .stButton>button { border-radius: 8px; font-weight: bold; }
-    /* Estilo para esconder o menu lateral padrão se necessário */
+    /* Esconde a barra lateral para focar nos botões superiores */
     [data-testid="stSidebar"] { display: none; }
     </style>
 """, unsafe_allow_html=True)
@@ -127,8 +127,7 @@ if st.session_state.admin is None:
                 st.error("Acesso negado. E-mail não consta na lista de Diretores.")
     st.stop()
 
-# --- 6. NAVEGAÇÃO NO TOPO ---
-# Criando os botões de navegação superiores
+# --- 6. NAVEGAÇÃO SUPERIOR ---
 c_nav1, c_nav2, c_nav3 = st.columns([1, 1, 0.5])
 with c_nav1:
     if st.button("📅 Gestão de Escala", use_container_width=True, type="secondary" if st.session_state.menu_ativo == "usuarios" else "primary"):
@@ -333,7 +332,7 @@ st.markdown("""
     <style>
     .card-container { padding: 15px; border-radius: 12px; border: 1px solid #ddd; margin-bottom: 10px; }
     .stButton>button { border-radius: 8px; font-weight: bold; }
-    /* Estilo para esconder o menu lateral padrão se necessário */
+    /* Esconde a barra lateral para focar nos botões superiores */
     [data-testid="stSidebar"] { display: none; }
     </style>
 """, unsafe_allow_html=True)
@@ -356,8 +355,7 @@ if st.session_state.admin is None:
                 st.error("Acesso negado. E-mail não consta na lista de Diretores.")
     st.stop()
 
-# --- 6. NAVEGAÇÃO NO TOPO ---
-# Criando os botões de navegação superiores
+# --- 6. NAVEGAÇÃO SUPERIOR ---
 c_nav1, c_nav2, c_nav3 = st.columns([1, 1, 0.5])
 with c_nav1:
     if st.button("📅 Gestão de Escala", use_container_width=True, type="secondary" if st.session_state.menu_ativo == "usuarios" else "primary"):
