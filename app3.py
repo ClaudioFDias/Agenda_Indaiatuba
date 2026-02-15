@@ -63,9 +63,16 @@ mapa_niveis_num = {k: i for i, k in enumerate(cores_niveis.keys())}
 dias_semana = {"Monday": "Segunda", "Tuesday": "Terça", "Wednesday": "Quarta", "Thursday": "Quinta", "Friday": "Sexta", "Saturday": "Sábado", "Sunday": "Domingo"}
 
 # --- 3. DIALOGS ---
+
 @st.dialog("Conflito de Agenda")
-def conflito_dialog(evento_nome, horario):
+def conflito_dialog(dados_conflito):
     st.warning("⚠️ **Você já possui uma atividade neste horário!**")
+    st.markdown(f"""
+    **Atividade conflitante:**
+    * **Evento:** {dados_conflito['Nome do Evento']}
+    * **Departamento:** {dados_conflito['Departamento']}
+    * **Horário:** {dados_conflito['Horario']}
+    """)
     if st.button("Entendido", type="primary", use_container_width=True): st.rerun()
 
 @st.dialog("Confirmar Alteração de Cadastro")
@@ -81,6 +88,15 @@ def confirmar_edicao_dialog(linha, novos_dados):
 
 @st.dialog("Confirmar Inscrição")
 def confirmar_dialog(linha, row, col_idx):
+    st.markdown("### Resumo da Inscrição:")
+    st.info(f"""
+    📅 **Data:** {row['Data Específica']}  
+    ⏰ **Horário:** {row['Horario']}  
+    🎭 **Evento:** {row['Nível']} - {row['Nome do Evento']}  
+    🏢 **Departamento:** {row['Departamento']}
+    """)
+    st.write("Deseja confirmar sua participação nesta escala?")
+    
     if st.button("Confirmar Inscrição", type="primary", use_container_width=True):
         with st.spinner("Salvando..."):
             sheet_ev, _ = get_sheets()
@@ -227,9 +243,19 @@ for i, row in df_f.iterrows():
     elif v1 and v2: st.button("🚫 CHEIO", key=f"bf_{i}", disabled=True, use_container_width=True)
     else:
         if st.button("Quero me inscrever", key=f"bq_{i}", type="primary", use_container_width=True):
-            conflito = df_ev[(df_ev['Data Específica'] == row['Data Específica']) & (df_ev['Horario'] == row['Horario']) & ((df_ev['Voluntário 1'].astype(str).str.lower().str.strip() == nome_u_comp) | (df_ev['Voluntário 2'].astype(str).str.lower().str.strip() == nome_u_comp))]
-            if not conflito.empty: conflito_dialog(conflito.iloc[0]['Nome do Evento'], conflito.iloc[0]['Horario'])
-            else: confirmar_dialog(int(row['index'])+2, row, 8 if v1 == "" else 9)
+            # Lógica de detecção de conflito
+            conflito = df_ev[
+                (df_ev['Data Específica'] == row['Data Específica']) & 
+                (df_ev['Horario'] == row['Horario']) & 
+                ((df_ev['Voluntário 1'].astype(str).str.lower().str.strip() == nome_u_comp) | 
+                 (df_ev['Voluntário 2'].astype(str).str.lower().str.strip() == nome_u_comp))
+            ]
+            
+            if not conflito.empty:
+                # Agora passamos a linha inteira do conflito para o dialog
+                conflito_dialog(conflito.iloc[0])
+            else:
+                confirmar_dialog(int(row['index'])+2, row, 8 if v1 == "" else 9)
 
 st.divider()
 if st.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
