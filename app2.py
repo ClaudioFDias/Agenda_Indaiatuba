@@ -188,42 +188,63 @@ if st.session_state.menu_ativo == "usuarios":
 
 else: # 📅 Gestão de Escala
     st.title("Painel de Escala Geral")
-    col_f1, col_f2 = st.columns(2)
-    with col_f1: f_data = st.date_input("Filtrar Data:", value=date.today())
-    with col_f2: f_depto = st.selectbox("Departamento:", ["Todos"] + sorted(df_ev['Departamento'].unique().tolist()))
+    col_f1, col_f2 = st.columns([1, 2]) # Ajustei a proporção para o filtro maior
+    
+    with col_f1: 
+        f_data = st.date_input("Filtrar Data:", value=date.today())
+    
+    with col_f2:
+        # Busca a lista de departamentos únicos
+        lista_deptos = sorted(df_ev['Departamento'].unique().tolist())
+        
+        # Multiselect para múltiplas escolhas
+        f_deptos_sel = st.multiselect(
+            "Filtrar Departamentos:", 
+            options=["Todos"] + lista_deptos,
+            default=["Todos"],
+            help="Selecione 'Todos' ou escolha departamentos específicos"
+        )
 
+    # --- Lógica de Filtragem ---
     df_ev['Data_Dt'] = pd.to_datetime(df_ev['Data Específica'], dayfirst=True)
     df_f = df_ev[df_ev['Data_Dt'].dt.date >= f_data].copy()
-    if f_depto != "Todos": df_f = df_f[df_f['Departamento'] == f_depto]
+
+    # Se "Todos" estiver selecionado ou se nada estiver selecionado, mostra tudo
+    if "Todos" not in f_deptos_sel and len(f_deptos_sel) > 0:
+        df_f = df_f[df_f['Departamento'].isin(f_deptos_sel)]
 
     df_f = df_f.sort_values(['Data_Dt', 'Horario'])
 
-    for idx, row in df_f.iterrows():
-        linha_planilha = idx + 2
-        bg = cores_niveis.get(str(row['Nível']).strip(), "#f0f0f0")
-        dia_nome = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
-        
-        with st.container():
-            st.markdown(f"""
-            <div class="card-container" style="background-color: {bg}; border-left: 10px solid rgba(0,0,0,0.2);">
-                <div style="line-height: 1.6;">
-                    <b>📅 Data: {row['Data Específica']} ({dia_nome})</b><br>
-                    <b>⏰ Horário: {row['Horario']}</b><br>
-                    <b>🎭 Evento: {row['Nível']} - {row['Nome do Evento']}</b><br>
-                    <b>🏢 Departamento: {row['Departamento']}</b>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+    # --- Renderização dos Cards ---
+    if df_f.empty:
+        st.info("Nenhum evento encontrado para os filtros selecionados.")
+    else:
+        for idx, row in df_f.iterrows():
+            linha_planilha = idx + 2
+            bg = cores_niveis.get(str(row['Nível']).strip(), "#f0f0f0")
+            dia_nome = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
             
-            c1, c2 = st.columns(2)
-            for i, col_name in enumerate(['Voluntário 1', 'Voluntário 2']):
-                with [c1, c2][i]:
-                    vol_nome = str(row[col_name]).strip()
-                    if vol_nome and vol_nome not in ["", "---", "nan"]:
-                        st.success(f"**✅ {vol_nome}**")
-                        if st.button(f"Remover {vol_nome.split()[0]}", key=f"rem_{idx}_{i}", use_container_width=True):
-                            cancelar_dialog(linha_planilha, 8+i, vol_nome)
-                    else:
-                        if st.button(f"➕ Vaga {i+1}", key=f"add_{idx}_{i}", use_container_width=True):
-                            gerenciar_inscricao_dialog(linha_planilha, row, 8+i, df_us, df_ev)
-            st.divider()
+            with st.container():
+                st.markdown(f"""
+                <div class="card-container" style="background-color: {bg}; border-left: 10px solid rgba(0,0,0,0.2);">
+                    <div style="line-height: 1.6;">
+                        <b>📅 Data: {row['Data Específica']} ({dia_nome})</b><br>
+                        <b>⏰ Horário: {row['Horario']}</b><br>
+                        <b>🎭 Evento: {row['Nível']} - {row['Nome do Evento']}</b><br>
+                        <b>🏢 Departamento: {row['Departamento']}</b>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                c1, c2 = st.columns(2)
+                for i, col_name in enumerate(['Voluntário 1', 'Voluntário 2']):
+                    with [c1, c2][i]:
+                        vol_nome = str(row[col_name]).strip()
+                        if vol_nome and vol_nome not in ["", "---", "nan"]:
+                            st.success(f"**✅ {vol_nome}**")
+                            if st.button(f"Remover {vol_nome.split()[0]}", key=f"rem_{idx}_{i}", use_container_width=True):
+                                cancelar_dialog(linha_planilha, 8+i, vol_nome)
+                        else:
+                            if st.button(f"➕ Vaga {i+1}", key=f"add_{idx}_{i}", use_container_width=True):
+                                gerenciar_inscricao_dialog(linha_planilha, row, 8+i, df_us, df_ev)
+                st.divider()
