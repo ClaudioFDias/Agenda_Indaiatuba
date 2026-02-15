@@ -60,7 +60,7 @@ cores_niveis = {
     "AV3": "#E1BEE7", "AV3A": "#E1BEE7", "AV3/": "#E1BEE7", "AV4": "#FFF9C4", "AV4A": "#FFF9C4"
 }
 mapa_niveis_num = {k: i for i, k in enumerate(cores_niveis.keys())}
-dias_semana = {"Monday": "Segunda", "Tuesday": "Terça", "Wednesday": "Quarta", "Thursday": "Quinta", "Friday": "Sexta", "Saturday": "Sábado", "Sunday": "Domingo"}
+dias_semana = {"Monday": "Segunda-feira", "Tuesday": "Terça-feira", "Wednesday": "Quarta-feira", "Thursday": "Quinta-feira", "Friday": "Sexta-feira", "Saturday": "Sábado", "Sunday": "Domingo"}
 
 # --- 3. DIALOGS ---
 
@@ -88,9 +88,12 @@ def confirmar_edicao_dialog(linha, novos_dados):
 
 @st.dialog("Confirmar Inscrição")
 def confirmar_dialog(linha, row, col_idx):
+    # Obtemos o dia da semana em português
+    dia_nome = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
+    
     st.markdown("### Resumo da Inscrição:")
     st.info(f"""
-    📅 **Data:** {row['Data Específica']}  
+    📅 **Data:** {row['Data Específica']} ({dia_nome})  
     ⏰ **Horário:** {row['Horario']}  
     🎭 **Evento:** {row['Nível']} - {row['Nome do Evento']}  
     🏢 **Departamento:** {row['Departamento']}
@@ -243,7 +246,6 @@ for i, row in df_f.iterrows():
     elif v1 and v2: st.button("🚫 CHEIO", key=f"bf_{i}", disabled=True, use_container_width=True)
     else:
         if st.button("Quero me inscrever", key=f"bq_{i}", type="primary", use_container_width=True):
-            # Lógica de detecção de conflito
             conflito = df_ev[
                 (df_ev['Data Específica'] == row['Data Específica']) & 
                 (df_ev['Horario'] == row['Horario']) & 
@@ -252,7 +254,6 @@ for i, row in df_f.iterrows():
             ]
             
             if not conflito.empty:
-                # Agora passamos a linha inteira do conflito para o dialog
                 conflito_dialog(conflito.iloc[0])
             else:
                 confirmar_dialog(int(row['index'])+2, row, 8 if v1 == "" else 9)
