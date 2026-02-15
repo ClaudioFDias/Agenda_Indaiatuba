@@ -75,22 +75,9 @@ def conflito_dialog(dados_conflito):
     """)
     if st.button("Entendido", type="primary", use_container_width=True): st.rerun()
 
-@st.dialog("Confirmar Alteração de Cadastro")
-def confirmar_edicao_dialog(linha, novos_dados):
-    st.markdown("### Verifique seus novos dados:")
-    st.markdown(f"**Nome:** {novos_dados[1]}\n**Telefone:** {novos_dados[2]}\n**Nível:** {novos_dados[4]}\n**Departamentos:** {novos_dados[3]}")
-    if st.button("Confirmar e Salvar", type="primary", use_container_width=True):
-        _, sheet_us = get_sheets()
-        sheet_us.update(f"A{linha}:E{linha}", [novos_dados])
-        st.session_state.user = {"Email": novos_dados[0], "Nome": novos_dados[1], "Telefone": novos_dados[2], "Departamentos": novos_dados[3], "Nivel": novos_dados[4]}
-        st.session_state.modo_edicao = False
-        st.cache_data.clear(); st.success("Atualizado!"); st.rerun()
-
 @st.dialog("Confirmar Inscrição")
 def confirmar_dialog(linha, row, col_idx):
-    # Obtemos o dia da semana em português
     dia_nome = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
-    
     st.markdown("### Resumo da Inscrição:")
     st.info(f"""
     📅 **Data:** {row['Data Específica']} ({dia_nome})  
@@ -121,7 +108,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if 'user' not in st.session_state: st.session_state.user = None
-if 'modo_edicao' not in st.session_state: st.session_state.modo_edicao = False
 if 'ver_painel' not in st.session_state: st.session_state.ver_painel = False
 
 df_ev, df_us = load_data_cached()
@@ -143,6 +129,7 @@ if st.session_state.ver_painel:
             tx_c = "#FFFFFF" if "AV2" in str(nivel) else "#000000"
             html_parts = [f'<div class="public-card" style="background-color: {bg_c}; color: {tx_c};">', f'<div class="public-title" style="border-color: {tx_c}44;">{nivel} - {nome_ev} - {horario}</div>']
             for _, row in grupo.iterrows():
+                v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 1']).strip() # (Ajuste técnico v1/v2)
                 v1, v2 = str(row['Voluntário 1']).strip(), str(row['Voluntário 2']).strip()
                 v1_st = f'<span class="vol-filled">🟢 {v1}</span>' if v1 and v1 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
                 v2_st = f'<span class="vol-filled">🟢 {v2}</span>' if v2 and v2 not in ["", "---", "nan", "None"] else '<span class="vol-empty">🔴 Vaga Aberta</span>'
@@ -151,60 +138,22 @@ if st.session_state.ver_painel:
             st.markdown("".join(html_parts), unsafe_allow_html=True)
     st.stop()
 
-# B) LOGIN / BUSCA
+# B) LOGIN
 if st.session_state.user is None:
     st.title("🤝 Escala de Voluntários")
     if st.button("🔍 Ver Responsáveis do Dia (Público)", use_container_width=True):
         st.session_state.ver_painel = True; st.rerun()
     st.divider()
 
-    if st.session_state.modo_edicao:
-        st.subheader("📝 Alterar Meus Dados")
-        with st.form("busca_edicao"):
-            email_b = st.text_input("E-mail cadastrado:").strip().lower()
-            if st.form_submit_button("Buscar Cadastro", type="primary", use_container_width=True):
-                user_row = df_us[df_us['Email'].astype(str).str.lower() == email_b]
-                if not user_row.empty: 
-                    if 'edit_row' in st.session_state: del st.session_state['edit_row']
-                    st.session_state['edit_row'] = user_row.iloc[0].to_dict()
-                    st.session_state['edit_idx'] = user_row.index[0] + 2
-                else: st.error("E-mail não encontrado.")
-        
-        if 'edit_row' in st.session_state:
-            with st.form("edicao_final"):
-                dados = st.session_state['edit_row']
-                deps_raw = str(dados.get('Departamentos', ''))
-                deps_usuario_lista = [d.strip() for d in deps_raw.split(",") if d.strip() and d.lower() not in ['nan', 'none']]
-                deps_default = [d for d in deps_usuario_lista if d in deps_na_planilha]
-                
-                n_e = st.text_input("Nome Crachá:", value=dados['Nome'])
-                t_e = st.text_input("Telefone:", value=dados['Telefone'])
-                d_e = st.multiselect("Seus Departamentos:", options=deps_na_planilha, default=deps_default)
-                
-                niv_l = list(cores_niveis.keys())
-                niv_atual = str(dados.get('Nivel', 'BAS')).strip()
-                niv_idx = niv_l.index(niv_atual) if niv_atual in niv_l else 0
-                niv_e = st.selectbox("Nível:", niv_l, index=niv_idx)
-                
-                if st.form_submit_button("Salvar Alterações", type="primary", use_container_width=True):
-                    confirmar_edicao_dialog(st.session_state['edit_idx'], [dados['Email'], n_e, t_e, ",".join(d_e), niv_e])
-        
-        if st.button("Voltar"): 
-            if 'edit_row' in st.session_state: del st.session_state['edit_row']
-            st.session_state.modo_edicao = False; st.rerun()
-    else:
-        with st.form("login"):
-            em = st.text_input("E-mail para entrar:").strip().lower()
-            if st.form_submit_button("Entrar no Sistema", type="primary", use_container_width=True):
-                u = df_us[df_us['Email'].astype(str).str.lower() == em]
-                if not u.empty: 
-                    st.session_state.user = u.iloc[0].to_dict()
-                    st.rerun()
-                else: 
-                    st.error("⚠️ Acesso não autorizado. E-mail não encontrado na base de dados.")
-
-        st.divider()
-        if st.button("⚙️ Alterar Meus Dados"): st.session_state.modo_edicao = True; st.rerun()
+    with st.form("login"):
+        em = st.text_input("E-mail para entrar:").strip().lower()
+        if st.form_submit_button("Entrar no Sistema", type="primary", use_container_width=True):
+            u = df_us[df_us['Email'].astype(str).str.lower() == em]
+            if not u.empty: 
+                st.session_state.user = u.iloc[0].to_dict()
+                st.rerun()
+            else: 
+                st.error("⚠️ Acesso não autorizado. E-mail não encontrado na base de dados.")
     st.stop()
 
 # --- 6. DASHBOARD (LOGADO) ---
@@ -252,7 +201,6 @@ for i, row in df_f.iterrows():
                 ((df_ev['Voluntário 1'].astype(str).str.lower().str.strip() == nome_u_comp) | 
                  (df_ev['Voluntário 2'].astype(str).str.lower().str.strip() == nome_u_comp))
             ]
-            
             if not conflito.empty:
                 conflito_dialog(conflito.iloc[0])
             else:
