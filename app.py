@@ -94,7 +94,7 @@ def confirmar_dialog(linha, row, col_idx):
             st.cache_data.clear(); st.rerun()
 
 # --- 4. STYLE ---
-st.set_page_config(page_title="ProVida Escala", layout="centered")
+st.set_page_config(page_title="Escala Indaiatuba", layout="centered")
 st.markdown("""
     <style>
     .public-card { padding: 15px; border-radius: 12px; border: 1px solid #ccc; margin-bottom: 20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1); }
@@ -209,3 +209,4 @@ for i, row in df_f.iterrows():
 st.divider()
 if st.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
 if st.button("Sair"): st.session_state.user = None; st.rerun()
+
