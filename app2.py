@@ -187,15 +187,30 @@ else: # 📅 Gestão de Escala
     for idx, row in df_f.iterrows():
         linha_planilha = idx + 2
         bg = cores_niveis.get(str(row['Nível']).strip(), "#f0f0f0")
+        
+        # Cálculo do dia da semana
+        dia_nome = dias_semana.get(row['Data_Dt'].strftime('%A'), "")
+        
         with st.container():
-            st.markdown(f'<div class="card-container" style="background-color: {bg};"><strong>{row["Data Específica"]} | {row["Horario"]}</strong><br><span style="font-size: 1.2em;">{row["Nível"]} - {row["Nome do Evento"]}</span><br><b>🏢 {row["Departamento"]}</b></div>', unsafe_allow_html=True)
+            # Card formatado conforme solicitado
+            st.markdown(f"""
+            <div class="card-container" style="background-color: {bg}; border-left: 10px solid rgba(0,0,0,0.2);">
+                <div style="line-height: 1.6;">
+                    <b>📅 Data: {row['Data Específica']} ({dia_nome})</b><br>
+                    <b>⏰ Horário: {row['Horario']}</b><br>
+                    <b>🎭 Evento: {row['Nível']} - {row['Nome do Evento']}</b><br>
+                    <b>🏢 Departamento: {row['Departamento']}</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
             c1, c2 = st.columns(2)
             for i, col_name in enumerate(['Voluntário 1', 'Voluntário 2']):
                 with [c1, c2][i]:
                     vol_nome = str(row[col_name]).strip()
                     if vol_nome and vol_nome not in ["", "---", "nan"]:
-                        st.success(f"✅ {vol_nome}")
-                        if st.button(f"Remover {vol_nome.split()[0]}", key=f"rem_{idx}_{i}"):
+                        st.success(f"**✅ {vol_nome}**")
+                        if st.button(f"Remover {vol_nome.split()[0]}", key=f"rem_{idx}_{i}", use_container_width=True):
                             cancelar_dialog(linha_planilha, 8+i, vol_nome)
                     else:
                         if st.button(f"➕ Vaga {i+1}", key=f"add_{idx}_{i}", use_container_width=True):
