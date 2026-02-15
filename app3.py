@@ -132,7 +132,7 @@ if st.session_state.ver_painel:
             st.markdown("".join(html_parts), unsafe_allow_html=True)
     st.stop()
 
-# B) LOGIN / CADASTRO
+# B) LOGIN / BUSCA
 if st.session_state.user is None:
     st.title("🤝 Escala de Voluntários")
     if st.button("🔍 Ver Responsáveis do Dia (Público)", use_container_width=True):
@@ -146,7 +146,6 @@ if st.session_state.user is None:
             if st.form_submit_button("Buscar Cadastro", type="primary", use_container_width=True):
                 user_row = df_us[df_us['Email'].astype(str).str.lower() == email_b]
                 if not user_row.empty: 
-                    # Limpamos a session state antes de carregar o novo
                     if 'edit_row' in st.session_state: del st.session_state['edit_row']
                     st.session_state['edit_row'] = user_row.iloc[0].to_dict()
                     st.session_state['edit_idx'] = user_row.index[0] + 2
@@ -155,19 +154,12 @@ if st.session_state.user is None:
         if 'edit_row' in st.session_state:
             with st.form("edicao_final"):
                 dados = st.session_state['edit_row']
-                
-                # --- LÓGICA DE PRE-SELEÇÃO REFORÇADA ---
-                # 1. Pegamos o que está na planilha e transformamos em lista
                 deps_raw = str(dados.get('Departamentos', ''))
-                # 2. Quebramos por vírgula, limpamos espaços e removemos lixo (nan, None)
                 deps_usuario_lista = [d.strip() for d in deps_raw.split(",") if d.strip() and d.lower() not in ['nan', 'none']]
-                # 3. Filtramos para garantir que o departamento realmente exista na lista de opções
                 deps_default = [d for d in deps_usuario_lista if d in deps_na_planilha]
                 
                 n_e = st.text_input("Nome Crachá:", value=dados['Nome'])
                 t_e = st.text_input("Telefone:", value=dados['Telefone'])
-                
-                # Usamos a lista limpa no default
                 d_e = st.multiselect("Seus Departamentos:", options=deps_na_planilha, default=deps_default)
                 
                 niv_l = list(cores_niveis.keys())
@@ -186,19 +178,12 @@ if st.session_state.user is None:
             em = st.text_input("E-mail para entrar:").strip().lower()
             if st.form_submit_button("Entrar no Sistema", type="primary", use_container_width=True):
                 u = df_us[df_us['Email'].astype(str).str.lower() == em]
-                if not u.empty: st.session_state.user = u.iloc[0].to_dict(); st.rerun()
-                else: st.session_state['novo_em'] = em
-        if 'novo_em' in st.session_state:
-            with st.form("cad"):
-                st.info("E-mail novo! Complete seu cadastro:")
-                nc = st.text_input("Nome Crachá:"); tc = st.text_input("Telefone:")
-                dc = st.multiselect("Departamentos:", options=deps_na_planilha)
-                nv = st.selectbox("Nível:", list(cores_niveis.keys()))
-                if st.form_submit_button("Cadastrar"):
-                    _, sheet_us = get_sheets()
-                    sheet_us.append_row([st.session_state['novo_em'], nc, tc, ",".join(dc), nv])
-                    st.session_state.user = {"Email": st.session_state['novo_em'], "Nome": nc, "Telefone": tc, "Departamentos": ",".join(dc), "Nivel": nv}
-                    st.cache_data.clear(); st.rerun()
+                if not u.empty: 
+                    st.session_state.user = u.iloc[0].to_dict()
+                    st.rerun()
+                else: 
+                    st.error("⚠️ Acesso não autorizado. E-mail não encontrado na base de dados.")
+
         st.divider()
         if st.button("⚙️ Alterar Meus Dados"): st.session_state.modo_edicao = True; st.rerun()
     st.stop()
