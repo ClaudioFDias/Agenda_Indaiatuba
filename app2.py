@@ -34,19 +34,12 @@ def load_admin_data():
     client = get_gspread_client()
     try:
         ss = client.open_by_key("1paP1ZB2ufwCc95T_gdCR92kx-suXbROnDfbWMC_ka0c")
-        
-        # Calendário
         df_ev = pd.DataFrame(ss.worksheet("Calendario_Eventos").get_all_records())
         df_ev.columns = [c.strip() for c in df_ev.columns]
-        
-        # Usuários
         df_us = pd.DataFrame(ss.worksheet("Usuarios").get_all_records())
         df_us.columns = [c.strip() for c in df_us.columns]
-        
-        # Diretores
         df_dir = pd.DataFrame(ss.worksheet("Diretores").get_all_records())
         df_dir.columns = [c.strip() for c in df_dir.columns]
-        
         return df_ev, df_us, df_dir
     except Exception as e:
         st.error(f"Erro ao carregar dados: {e}"); st.stop()
@@ -67,34 +60,26 @@ dias_semana = {"Monday": "Segunda-feira", "Tuesday": "Terça-feira", "Wednesday"
 
 # --- 3. DIALOGS ---
 
+@st.dialog("Atenção")
+def usuario_existe_dialog(email):
+    st.warning(f"⚠️ O e-mail **{email}** já está cadastrado no sistema.")
+    st.write("Para editar as informações deste voluntário, utilize a aba **'Alterar Existente'**.")
+    if st.button("Entendi", type="primary", use_container_width=True):
+        st.rerun()
+
 @st.dialog("Gerenciar Inscrição")
 def gerenciar_inscricao_dialog(linha_planilha, row_data, v_index, df_us, df_ev):
     st.subheader("Inscrever Voluntário")
     st.info(f"📍 {row_data['Departamento']} | ⏰ {row_data['Horario']}")
-    
-    # Lógica de Filtro de Usuários Aptos
-    # 1. Mesmo Departamento
-    # 2. Nível Compatível
-    # 3. Sem conflito no mesmo horário/dia
-    
     nivel_atividade = mapa_niveis_num.get(str(row_data['Nível']).strip(), 0)
-    
     usuarios_aptos = []
     for _, u in df_us.iterrows():
         u_deps = [d.strip() for d in str(u['Departamentos']).split(",")]
         u_nivel = mapa_niveis_num.get(str(u['Nivel']).strip(), 0)
-        
-        # Filtro de aptidão
         if row_data['Departamento'] in u_deps and u_nivel >= nivel_atividade:
-            # Filtro de conflito
-            conflito = df_ev[
-                (df_ev['Data Específica'] == row_data['Data Específica']) & 
-                (df_ev['Horario'] == row_data['Horario']) & 
-                ((df_ev['Voluntário 1'] == u['Nome']) | (df_ev['Voluntário 2'] == u['Nome']))
-            ]
+            conflito = df_ev[(df_ev['Data Específica'] == row_data['Data Específica']) & (df_ev['Horario'] == row_data['Horario']) & ((df_ev['Voluntário 1'] == u['Nome']) | (df_ev['Voluntário 2'] == u['Nome']))]
             if conflito.empty:
                 usuarios_aptos.append(f"{u['Nome']} ({u['Nivel']})")
-
     if not usuarios_aptos:
         st.warning("Nenhum voluntário disponível/apto para este horário.")
     else:
@@ -159,9 +144,8 @@ if menu == "👥 Gestão de Usuários":
             
             if st.form_submit_button("Cadastrar Voluntário", type="primary"):
                 if new_email in df_us['Email'].astype(str).str.lower().values:
-                    st.warning("⚠️ Este e-mail já existe! Redirecionando para alteração...")
-                    st.session_state.user_to_edit = new_email
-                    time.sleep(2); st.rerun()
+                    # Chamar o pop-up de aviso
+                    usuario_existe_dialog(new_email)
                 else:
                     _, sheet_us = get_sheets()
                     sheet_us.append_row([new_email, new_nome, new_tel, ",".join(new_deps), new_niv])
@@ -169,7 +153,7 @@ if menu == "👥 Gestão de Usuários":
 
     with aba2:
         user_list = df_us['Email'].tolist()
-        # Se veio do "Criar Novo" por erro, pré-seleciona
+        # Se tentou criar um que já existe, pré-selecionamos aqui por conveniência
         default_idx = user_list.index(st.session_state.get('user_to_edit')) if st.session_state.get('user_to_edit') in user_list else 0
         sel_user_email = st.selectbox("Selecione o usuário para editar:", user_list, index=default_idx)
         
@@ -190,7 +174,6 @@ if menu == "👥 Gestão de Usuários":
 
 else: # 📅 Gestão de Escala
     st.title("Painel de Escala Geral")
-    
     col_f1, col_f2 = st.columns(2)
     with col_f1: f_data = st.date_input("Filtrar Data:", value=date.today())
     with col_f2: f_depto = st.selectbox("Departamento:", ["Todos"] + sorted(df_ev['Departamento'].unique().tolist()))
@@ -204,16 +187,8 @@ else: # 📅 Gestão de Escala
     for idx, row in df_f.iterrows():
         linha_planilha = idx + 2
         bg = cores_niveis.get(str(row['Nível']).strip(), "#f0f0f0")
-        
         with st.container():
-            st.markdown(f"""
-            <div class="card-container" style="background-color: {bg};">
-                <strong>{row['Data Específica']} | {row['Horario']}</strong><br>
-                <span style="font-size: 1.2em;">{row['Nível']} - {row['Nome do Evento']}</span><br>
-                <b>🏢 {row['Departamento']}</b>
-            </div>
-            """, unsafe_allow_html=True)
-            
+            st.markdown(f'<div class="card-container" style="background-color: {bg};"><strong>{row["Data Específica"]} | {row["Horario"]}</strong><br><span style="font-size: 1.2em;">{row["Nível"]} - {row["Nome do Evento"]}</span><br><b>🏢 {row["Departamento"]}</b></div>', unsafe_allow_html=True)
             c1, c2 = st.columns(2)
             for i, col_name in enumerate(['Voluntário 1', 'Voluntário 2']):
                 with [c1, c2][i]:
