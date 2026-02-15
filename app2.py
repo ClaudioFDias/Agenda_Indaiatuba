@@ -127,6 +127,9 @@ if st.session_state.admin is None:
                 st.error("Acesso negado. E-mail não consta na lista de Diretores.")
     st.stop()
 
+# IDENTIFICAÇÃO DO DEPARTAMENTO DO DIRETOR
+depto_diretor = df_dir[df_dir['Email'].astype(str).str.lower() == st.session_state.admin]['Departamento'].iloc[0]
+
 # --- 6. NAVEGAÇÃO SUPERIOR ---
 c_nav1, c_nav2, c_nav3 = st.columns([1, 1, 0.5])
 with c_nav1:
@@ -147,7 +150,7 @@ st.divider()
 # --- 7. MÓDULOS ---
 
 if st.session_state.menu_ativo == "usuarios":
-    st.title("Gestão de Voluntários")
+    st.title(f"Gestão de Voluntários - {depto_diretor}")
     aba1, aba2 = st.tabs(["Criar Novo", "Alterar Existente"])
     
     with aba1:
@@ -155,7 +158,8 @@ if st.session_state.menu_ativo == "usuarios":
             new_email = st.text_input("E-mail:").strip().lower()
             new_nome = st.text_input("Nome Crachá:")
             new_tel = st.text_input("Telefone:")
-            new_deps = st.multiselect("Departamentos:", options=sorted(df_ev['Departamento'].unique().tolist()))
+            # Diretor só cadastra para o departamento dele
+            new_deps = st.multiselect("Departamentos:", options=[depto_diretor], default=[depto_diretor])
             new_niv = st.selectbox("Nível:", list(cores_niveis.keys()))
             
             if st.form_submit_button("Cadastrar Voluntário", type="primary"):
@@ -167,57 +171,59 @@ if st.session_state.menu_ativo == "usuarios":
                     st.cache_data.clear(); st.success("Cadastrado!"); time.sleep(1); st.rerun()
 
     with aba2:
-        user_list = df_us['Email'].tolist()
-        default_idx = user_list.index(st.session_state.get('user_to_edit')) if st.session_state.get('user_to_edit') in user_list else 0
-        sel_user_email = st.selectbox("Selecione o usuário para editar:", user_list, index=default_idx)
+        # Filtra lista de usuários que pertencem ao depto do diretor
+        df_us_filtrado = df_us[df_us['Departamentos'].str.contains(depto_diretor, na=False)]
+        user_list = df_us_filtrado['Email'].tolist()
         
-        if sel_user_email:
-            u_data = df_us[df_us['Email'] == sel_user_email].iloc[0]
-            with st.form("edit_user"):
-                ed_nome = st.text_input("Nome:", value=u_data['Nome'])
-                ed_tel = st.text_input("Telefone:", value=u_data['Telefone'])
-                ed_deps = st.multiselect("Departamentos:", options=sorted(df_ev['Departamento'].unique().tolist()), 
-                                        default=[d.strip() for d in str(u_data['Departamentos']).split(",") if d])
-                ed_niv = st.selectbox("Nível:", list(cores_niveis.keys()), index=list(cores_niveis.keys()).index(u_data['Nivel']))
-                
-                if st.form_submit_button("Salvar Alterações"):
-                    _, sheet_us = get_sheets()
-                    row_idx = df_us[df_us['Email'] == sel_user_email].index[0] + 2
-                    sheet_us.update(f"B{row_idx}:E{row_idx}", [[ed_nome, ed_tel, ",".join(ed_deps), ed_niv]])
-                    st.cache_data.clear(); st.success("Atualizado!"); time.sleep(1); st.rerun()
+        if not user_list:
+            st.info("Nenhum voluntário cadastrado para seu departamento.")
+        else:
+            default_idx = user_list.index(st.session_state.get('user_to_edit')) if st.session_state.get('user_to_edit') in user_list else 0
+            sel_user_email = st.selectbox("Selecione o usuário para editar:", user_list, index=default_idx)
+            
+            if sel_user_email:
+                u_data = df_us[df_us['Email'] == sel_user_email].iloc[0]
+                with st.form("edit_user"):
+                    ed_nome = st.text_input("Nome:", value=u_data['Nome'])
+                    ed_tel = st.text_input("Telefone:", value=u_data['Telefone'])
+                    # Mantém travado no depto dele
+                    ed_deps = st.multiselect("Departamentos:", options=[depto_diretor], default=[depto_diretor])
+                    ed_niv = st.selectbox("Nível:", list(cores_niveis.keys()), index=list(cores_niveis.keys()).index(u_data['Nivel']))
+                    
+                    if st.form_submit_button("Salvar Alterações"):
+                        _, sheet_us = get_sheets()
+                        row_idx = df_us[df_us['Email'] == sel_user_email].index[0] + 2
+                        sheet_us.update(f"B{row_idx}:E{row_idx}", [[ed_nome, ed_tel, ",".join(ed_deps), ed_niv]])
+                        st.cache_data.clear(); st.success("Atualizado!"); time.sleep(1); st.rerun()
 
 else: # 📅 Gestão de Escala
-    st.title("Painel de Escala Geral")
-    col_f1, col_f2 = st.columns([1, 2]) # Ajustei a proporção para o filtro maior
+    st.title(f"Painel de Escala - {depto_diretor}")
+    col_f1, col_f2 = st.columns([1, 2])
     
     with col_f1: 
         f_data = st.date_input("Filtrar Data:", value=date.today())
     
     with col_f2:
-        # Busca a lista de departamentos únicos
-        lista_deptos = sorted(df_ev['Departamento'].unique().tolist())
-        
-        # Multiselect para múltiplas escolhas
+        # O filtro de departamento agora é restrito ao depto do diretor
         f_deptos_sel = st.multiselect(
             "Filtrar Departamentos:", 
-            options=["Todos"] + lista_deptos,
-            default=["Todos"],
-            help="Selecione 'Todos' ou escolha departamentos específicos"
+            options=[depto_diretor],
+            default=[depto_diretor],
+            disabled=True # Travado para ele não ver outros
         )
 
     # --- Lógica de Filtragem ---
     df_ev['Data_Dt'] = pd.to_datetime(df_ev['Data Específica'], dayfirst=True)
     df_f = df_ev[df_ev['Data_Dt'].dt.date >= f_data].copy()
 
-    # Se "Todos" estiver selecionado ou se nada estiver selecionado, mostra tudo
-    if "Todos" not in f_deptos_sel and len(f_deptos_sel) > 0:
-        df_f = df_f[df_f['Departamento'].isin(f_deptos_sel)]
+    # Filtra obrigatoriamente pelo depto do diretor logado
+    df_f = df_f[df_f['Departamento'] == depto_diretor]
 
     df_f = df_f.sort_values(['Data_Dt', 'Horario'])
 
     # --- Renderização dos Cards ---
     if df_f.empty:
-        st.info("Nenhum evento encontrado para os filtros selecionados.")
+        st.info(f"Nenhum evento encontrado para {depto_diretor} nesta data.")
     else:
         for idx, row in df_f.iterrows():
             linha_planilha = idx + 2
