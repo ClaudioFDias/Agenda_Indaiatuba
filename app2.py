@@ -127,8 +127,9 @@ if st.session_state.admin is None:
                 st.error("Acesso negado. E-mail não consta na lista de Diretores.")
     st.stop()
 
-# IDENTIFICAÇÃO DO DEPARTAMENTO DO DIRETOR
-depto_diretor = df_dir[df_dir['Email'].astype(str).str.lower() == st.session_state.admin]['Departamento'].iloc[0]
+# --- NOVO: LÓGICA DE MULTIPLOS DEPARTAMENTOS ---
+string_deptos = df_dir[df_dir['Email'].astype(str).str.lower() == st.session_state.admin]['Departamento'].iloc[0]
+deptos_autorizados = [d.strip() for d in str(string_deptos).split(",")]
 
 # --- 6. NAVEGAÇÃO SUPERIOR ---
 c_nav1, c_nav2, c_nav3 = st.columns([1, 1, 0.5])
@@ -150,7 +151,8 @@ st.divider()
 # --- 7. MÓDULOS ---
 
 if st.session_state.menu_ativo == "usuarios":
-    st.title(f"Gestão de Voluntários - {depto_diretor}")
+    st.title(f"Gestão de Voluntários")
+    st.info(f"Gerenciando: {', '.join(deptos_autorizados)}")
     aba1, aba2 = st.tabs(["Criar Novo", "Alterar Existente"])
     
     with aba1:
@@ -158,8 +160,8 @@ if st.session_state.menu_ativo == "usuarios":
             new_email = st.text_input("E-mail:").strip().lower()
             new_nome = st.text_input("Nome Crachá:")
             new_tel = st.text_input("Telefone:")
-            # Diretor só cadastra para o departamento dele
-            new_deps = st.multiselect("Departamentos:", options=[depto_diretor], default=[depto_diretor])
+            # Permite selecionar entre os departamentos que ele é diretor
+            new_deps = st.multiselect("Departamentos:", options=deptos_autorizados, default=deptos_autorizados)
             new_niv = st.selectbox("Nível:", list(cores_niveis.keys()))
             
             if st.form_submit_button("Cadastrar Voluntário", type="primary"):
@@ -171,12 +173,12 @@ if st.session_state.menu_ativo == "usuarios":
                     st.cache_data.clear(); st.success("Cadastrado!"); time.sleep(1); st.rerun()
 
     with aba2:
-        # Filtra lista de usuários que pertencem ao depto do diretor
-        df_us_filtrado = df_us[df_us['Departamentos'].str.contains(depto_diretor, na=False)]
+        # Filtra voluntários que pertencem a QUALQUER um dos departamentos do diretor
+        df_us_filtrado = df_us[df_us['Departamentos'].apply(lambda x: any(d in [i.strip() for i in str(x).split(",")] for d in deptos_autorizados))]
         user_list = df_us_filtrado['Email'].tolist()
         
         if not user_list:
-            st.info("Nenhum voluntário cadastrado para seu departamento.")
+            st.info("Nenhum voluntário encontrado para seus departamentos.")
         else:
             default_idx = user_list.index(st.session_state.get('user_to_edit')) if st.session_state.get('user_to_edit') in user_list else 0
             sel_user_email = st.selectbox("Selecione o usuário para editar:", user_list, index=default_idx)
@@ -186,8 +188,7 @@ if st.session_state.menu_ativo == "usuarios":
                 with st.form("edit_user"):
                     ed_nome = st.text_input("Nome:", value=u_data['Nome'])
                     ed_tel = st.text_input("Telefone:", value=u_data['Telefone'])
-                    # Mantém travado no depto dele
-                    ed_deps = st.multiselect("Departamentos:", options=[depto_diretor], default=[depto_diretor])
+                    ed_deps = st.multiselect("Departamentos:", options=deptos_autorizados, default=[d.strip() for d in str(u_data['Departamentos']).split(",") if d.strip() in deptos_autorizados])
                     ed_niv = st.selectbox("Nível:", list(cores_niveis.keys()), index=list(cores_niveis.keys()).index(u_data['Nivel']))
                     
                     if st.form_submit_button("Salvar Alterações"):
@@ -197,33 +198,36 @@ if st.session_state.menu_ativo == "usuarios":
                         st.cache_data.clear(); st.success("Atualizado!"); time.sleep(1); st.rerun()
 
 else: # 📅 Gestão de Escala
-    st.title(f"Painel de Escala - {depto_diretor}")
+    st.title("Painel de Escala")
     col_f1, col_f2 = st.columns([1, 2])
     
     with col_f1: 
         f_data = st.date_input("Filtrar Data:", value=date.today())
     
     with col_f2:
-        # O filtro de departamento agora é restrito ao depto do diretor
+        # Agora ele pode escolher entre os departamentos que gerencia (ou todos eles)
         f_deptos_sel = st.multiselect(
             "Filtrar Departamentos:", 
-            options=[depto_diretor],
-            default=[depto_diretor],
-            disabled=True # Travado para ele não ver outros
+            options=["Todos"] + deptos_autorizados,
+            default=["Todos"]
         )
 
     # --- Lógica de Filtragem ---
     df_ev['Data_Dt'] = pd.to_datetime(df_ev['Data Específica'], dayfirst=True)
     df_f = df_ev[df_ev['Data_Dt'].dt.date >= f_data].copy()
 
-    # Filtra obrigatoriamente pelo depto do diretor logado
-    df_f = df_f[df_f['Departamento'] == depto_diretor]
+    # Aplica restrição: Apenas eventos dos deptos autorizados
+    if "Todos" in f_deptos_sel or not f_deptos_sel:
+        df_f = df_f[df_f['Departamento'].isin(deptos_autorizados)]
+    else:
+        # Se ele selecionou um subconjunto específico dos dele
+        df_f = df_f[df_f['Departamento'].isin(f_deptos_sel)]
 
     df_f = df_f.sort_values(['Data_Dt', 'Horario'])
 
     # --- Renderização dos Cards ---
     if df_f.empty:
-        st.info(f"Nenhum evento encontrado para {depto_diretor} nesta data.")
+        st.info("Nenhum evento encontrado.")
     else:
         for idx, row in df_f.iterrows():
             linha_planilha = idx + 2
