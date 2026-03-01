@@ -56,7 +56,7 @@ def get_sheets():
 # --- 2. CONFIGURAÇÕES ---
 cores_niveis = {
     "Nenhum": "#FFFFFF", "BAS": "#C8E6C9", "AV1": "#FFCDD2", "IN": "#BBDEFB",
-    "AV2": "#795548", "AV2-24": "#795548", "AV2-23": "#795548", "AV2/": "#795548",
+    "AV2-24": "#795548", "AV2-23": "#795548", "AV2": "#795548", "AV2/": "#795548",
     "AV3": "#E1BEE7", "AV3A": "#E1BEE7", "AV3/": "#E1BEE7", "AV4": "#FFF9C4", "AV4A": "#FFF9C4"
 }
 mapa_niveis_num = {k: i for i, k in enumerate(cores_niveis.keys())}
