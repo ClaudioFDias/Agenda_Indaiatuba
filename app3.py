@@ -168,10 +168,25 @@ c1, c2 = st.columns(2)
 with c1: f_nivel = st.selectbox("Filtrar por Nível:", ["Todos"] + list(cores_niveis.keys()))
 with c2: f_data = st.date_input("A partir de:", value=date.today())
 
+# NOVO CÓDIGO COM A RESTRIÇÃO DE EXERCÍCIO
 df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fillna(99)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
 df_f = df_ev[df_ev['Departamento'].isin(meus_deps)].copy()
-df_f = df_f[(df_f['Niv_N'] <= mapa_niveis_num.get(user['Nivel'], 0)) & (df_f['Data_Dt'].dt.date >= f_data)]
+
+# 1. Pegamos o nível numérico do usuário
+user_niv_num = mapa_niveis_num.get(user['Nivel'], 0)
+
+# 2. Identificamos quais eventos têm "Exercício" no nome (ignorando maiúsculas/minúsculas e falta de acento)
+is_exercicio = df_f['Nome do Evento'].astype(str).str.contains(r'Exerc[íi]cio', case=False, regex=True, na=False)
+
+# 3. Regra Padrão: Evento não é exercício E Nível do evento <= Nível do usuário
+cond_normal = (~is_exercicio) & (df_f['Niv_N'] <= user_niv_num)
+
+# 4. Regra Exercício: Evento é exercício E Nível do evento < Nível do usuário (ou seja, exige pelo menos 1 nível acima)
+cond_exercicio = is_exercicio & (df_f['Niv_N'] < user_niv_num)
+
+# 5. Aplicamos o filtro combinando as duas lógicas com o filtro de data que já existia
+df_f = df_f[(cond_normal | cond_exercicio) & (df_f['Data_Dt'].dt.date >= f_data)]
 
 if f_depto_pill != "Todos": df_f = df_f[df_f['Departamento'] == f_depto_pill]
 if f_nivel != "Todos": df_f = df_f[df_f['Nível'].astype(str).str.strip() == f_nivel]
