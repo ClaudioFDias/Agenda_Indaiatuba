@@ -56,7 +56,7 @@ def get_sheets():
 # --- 2. CONFIGURAÇÕES ---
 cores_niveis = {
     "Nenhum": "#FFFFFF", "BAS": "#C8E6C9", "AV1": "#FFCDD2", "IN": "#BBDEFB",
-    "AV2-24": "#795548", "AV2-23": "#795548", "AV2": "#795548", "AV2/": "#795548",
+    "AV2": "#795548", "AV2-24": "#795548", "AV2-23": "#795548", "AV2/": "#795548",
     "AV3": "#E1BEE7", "AV3A": "#E1BEE7", "AV3/": "#E1BEE7", "AV4": "#FFF9C4", "AV4A": "#FFF9C4"
 }
 mapa_niveis_num = {k: i for i, k in enumerate(cores_niveis.keys())}
@@ -168,25 +168,35 @@ c1, c2 = st.columns(2)
 with c1: f_nivel = st.selectbox("Filtrar por Nível:", ["Todos"] + list(cores_niveis.keys()))
 with c2: f_data = st.date_input("A partir de:", value=date.today())
 
-# NOVO CÓDIGO COM A RESTRIÇÃO DE EXERCÍCIO
+# --- 6. DASHBOARD (LOGADO) ---
+# ... (mantenha as definições de meus_deps, st.title e os filtros de pills/selectbox)
+
+# Preparação dos dados
 df_ev['Niv_N'] = df_ev['Nível'].astype(str).str.strip().map(mapa_niveis_num).fillna(99)
 df_ev = df_ev.sort_values(by=['Data_Dt', 'Horario']).reset_index(drop=False)
+
+# Filtro inicial: Departamento e Data
 df_f = df_ev[df_ev['Departamento'].isin(meus_deps)].copy()
 
-# 1. Pegamos o nível numérico do usuário
+# --- NOVA LÓGICA DE RESTRIÇÃO POR TIPO ---
 user_niv_num = mapa_niveis_num.get(user['Nivel'], 0)
 
-# 2. Identificamos quais eventos têm "Exercício" no nome (ignorando maiúsculas/minúsculas e falta de acento)
-is_exercicio = df_f['Nome do Evento'].astype(str).str.contains(r'Exerc[íi]cio', case=False, regex=True, na=False)
+# 1. Regra: Nível da atividade e superiores (Aceita >= nível da atividade)
+# Ou seja, se o nível do usuário for maior ou igual ao nível exigido
+cond_mesmo_nivel = (df_f['Tipo'] == "Nível da atividade e superiores") & (user_niv_num >= df_f['Niv_N'])
 
-# 3. Regra Padrão: Evento não é exercício E Nível do evento <= Nível do usuário
-cond_normal = (~is_exercicio) & (df_f['Niv_N'] <= user_niv_num)
+# 2. Regra: Nível Superior (Aceita apenas > nível da atividade)
+# Ou seja, o usuário precisa ter um nível estritamente maior que o da atividade
+cond_nivel_estrito = (df_f['Tipo'] == "Nível Superior") & (user_niv_num > df_f['Niv_N'])
 
-# 4. Regra Exercício: Evento é exercício E Nível do evento < Nível do usuário (ou seja, exige pelo menos 1 nível acima)
-cond_exercicio = is_exercicio & (df_f['Niv_N'] < user_niv_num)
+# 3. Caso a coluna Tipo esteja vazia, definimos um comportamento padrão (ex: igual à regra 1)
+cond_padrao = (~df_f['Tipo'].isin(["Nível Superior", "Nível da atividade e superiores"])) & (user_niv_num >= df_f['Niv_N'])
 
-# 5. Aplicamos o filtro combinando as duas lógicas com o filtro de data que já existia
-df_f = df_f[(cond_normal | cond_exercicio) & (df_f['Data_Dt'].dt.date >= f_data)]
+# Aplicação final do filtro de permissão + data
+df_f = df_f[(cond_mesmo_nivel | cond_nivel_estrito | cond_padrao) & (df_f['Data_Dt'].dt.date >= f_data)]
+# ----------------------------------------
+
+# ... (restante do código: filtros de pills de status e loop de cards)
 
 if f_depto_pill != "Todos": df_f = df_f[df_f['Departamento'] == f_depto_pill]
 if f_nivel != "Todos": df_f = df_f[df_f['Nível'].astype(str).str.strip() == f_nivel]
