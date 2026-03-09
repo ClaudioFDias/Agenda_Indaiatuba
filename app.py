@@ -55,7 +55,7 @@ def get_sheets():
 
 # --- 2. CONFIGURAÇÕES ---
 cores_niveis = {
-    "Nenhum": "#FFFFFF", "BAS": "#C8E6C9", "AV1": "#FFCDD2", "IN": "#BBDEFB",
+    "Nenhum": "#FFFFFF", "BAS": "#C8E6C9", "AV1": "#FFCDD2", "IN": "#BBDEFB", "AV2SC": "#795548",
     "AV2-24": "#795548", "AV2-23": "#795548", "AV2": "#795548", "AV2/": "#795548",
     "AV3": "#E1BEE7", "AV3A": "#E1BEE7", "AV3/": "#E1BEE7", "AV4": "#FFF9C4", "AV4A": "#FFF9C4"
 }
@@ -234,3 +234,4 @@ for i, row in df_f.iterrows():
 st.divider()
 if st.button("🔄 Sincronizar"): st.cache_data.clear(); st.rerun()
 if st.button("Sair"): st.session_state.user = None; st.rerun()
+
